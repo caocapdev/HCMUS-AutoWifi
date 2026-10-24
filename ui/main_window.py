@@ -8,9 +8,7 @@ from core.startup_manager import (
     get_current_startup_mode,
     set_startup_mode,
     MODE_LABELS,
-    MODE_NONE,
-    MODE_REGISTRY,
-    MODE_TASK
+    MODE_NONE
 )
 
 # Color Palette - Modern Dark Slate & HCMUS Royal Blue

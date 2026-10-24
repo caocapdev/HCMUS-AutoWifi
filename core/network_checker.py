@@ -2,6 +2,12 @@ import subprocess
 import requests
 from core.config import config
 
+_PROBE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache"
+}
+
 def get_wifi_info() -> dict:
     """
     Retrieves current Wi-Fi status using Windows netsh command.
@@ -59,15 +65,10 @@ def check_captive_portal() -> dict:
     }
     probe_url = config.get("connecttest_url", "http://www.msftconnecttest.com/connecttest.txt")
     redirect_url = config.get("portal_redirect_url", "http://www.msftconnecttest.com/redirect")
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache"
-    }
 
     # Step 1: probe connecttest.txt without following redirects
     try:
-        r = requests.get(probe_url, headers=headers, timeout=1.8, allow_redirects=False)
+        r = requests.get(probe_url, headers=_PROBE_HEADERS, timeout=1.8, allow_redirects=False)
         result["status_code"] = r.status_code
 
         if r.status_code in (301, 302, 303, 307, 308):
@@ -95,7 +96,7 @@ def check_captive_portal() -> dict:
 
     # Step 2: Probe redirect_url fallback
     try:
-        r2 = requests.get(redirect_url, headers=headers, timeout=1.8, allow_redirects=False)
+        r2 = requests.get(redirect_url, headers=_PROBE_HEADERS, timeout=1.8, allow_redirects=False)
         loc2 = r2.headers.get("Location", "")
         if r2.status_code in (301, 302, 303, 307, 308):
             if "go.microsoft.com" in loc2:

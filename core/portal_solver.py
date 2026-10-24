@@ -14,6 +14,18 @@ from core.config import config
 from core.network_checker import get_wifi_info
 from core.portals import find_portal_strategy, BasePortal
 
+# NCSI probe constants
+_NCSI_URL = "http://www.msftconnecttest.com/connecttest.txt"
+_NCSI_EXPECTED = "Microsoft Connect Test"
+
+# Browser automation timing constants
+_MAX_BROWSER_DURATION = 35      # seconds – max time to wait for portal login via browser
+_FORM_SUBMIT_WAIT_STEPS = 6     # extra verify iterations after a form submit click
+_QUICK_SUBMIT_WAIT_STEPS = 1    # verify iterations after a fast button click
+_FORM_SUBMIT_STEP_DELAY = 0.5   # seconds between form-submit verify steps
+_QUICK_SUBMIT_STEP_DELAY = 0.2  # seconds between quick-click verify steps
+
+
 def find_system_browser() -> str:
     """Finds installed Microsoft Edge or Google Chrome executable."""
     bases = [os.environ.get("ProgramFiles(x86)", ""), os.environ.get("ProgramFiles", ""), os.environ.get("LOCALAPPDATA", "")]
@@ -181,11 +193,10 @@ class PortalSolver:
 
             _cdp_call("Page.navigate", {"url": target_url})
             start_time = time.time()
-            max_duration = 35
             js_script = strategy.get_browser_script()
             time.sleep(0.5)
 
-            while time.time() - start_time < max_duration:
+            while time.time() - start_time < _MAX_BROWSER_DURATION:
                 if self.verify_internet(timeout=0.4):
                     return self._build_success_result(strategy.name)
 
@@ -217,8 +228,8 @@ class PortalSolver:
                     if status == "clicked":
                         self.log(f"Đã kích hoạt: '{button_name}'. Đang đợi kết nối...", "success")
                         is_form_submit = any(k in (button_name or "").lower() for k in ["frmlogin", "submit", "mikrotik"])
-                        max_wait_steps = 6 if is_form_submit else 1
-                        step_delay = 0.5 if is_form_submit else 0.2
+                        max_wait_steps = _FORM_SUBMIT_WAIT_STEPS if is_form_submit else _QUICK_SUBMIT_WAIT_STEPS
+                        step_delay = _FORM_SUBMIT_STEP_DELAY if is_form_submit else _QUICK_SUBMIT_STEP_DELAY
 
                         for _ in range(max_wait_steps):
                             time.sleep(step_delay)
@@ -256,16 +267,10 @@ class PortalSolver:
     def verify_internet(self, timeout: float = 0.8) -> bool:
         """Lightweight ultra-fast probe directly to NCSI without full overhead."""
         try:
-            r = requests.get(
-                "http://www.msftconnecttest.com/connecttest.txt",
-                timeout=timeout,
-                allow_redirects=False
-            )
-            return r.status_code == 200 and r.text.strip() == "Microsoft Connect Test"
+            r = requests.get(_NCSI_URL, timeout=timeout, allow_redirects=False)
+            return r.status_code == 200 and r.text.strip() == _NCSI_EXPECTED
         except Exception:
             return False
-
-    _fast_verify_internet = verify_internet
 
     def _build_success_result(self, portal_name: str) -> dict:
         wifi = get_wifi_info()

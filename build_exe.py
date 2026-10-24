@@ -3,11 +3,14 @@ import sys
 import os
 import shutil
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from core.config import APP_VERSION
+
 if sys.stdout:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 def build():
-    print("[Build] Đang đóng gói HCMUS AutoWifi thành file .exe độc lập...")
+    print(f"[Build] Đang đóng gói HCMUS AutoWifi v{APP_VERSION} thành file .exe độc lập...")
     root_dir = os.path.abspath(os.path.dirname(__file__))
     target_exe = os.path.join(root_dir, "HCMUS_AutoWifi.exe")
     old_exe = os.path.join(root_dir, "HCMUS_AutoWifi.exe.old")

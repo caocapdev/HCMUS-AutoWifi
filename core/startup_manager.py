@@ -6,6 +6,8 @@ import ctypes
 from ctypes import wintypes
 from core.config import get_app_dir, config
 
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 APP_NAME = "HCMUSAutoWifi"
 TASK_NAME = "HCMUSAutoWifi"
@@ -97,7 +99,7 @@ def is_task_enabled() -> bool:
             ["schtasks.exe", "/Query", "/TN", TASK_NAME],
             capture_output=True,
             text=True,
-            creationflags=0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+            creationflags=_NO_WINDOW
         )
         return p.returncode == 0
     except Exception:
@@ -119,7 +121,7 @@ def enable_scheduled_task() -> tuple[bool, str]:
             cmd,
             capture_output=True,
             text=True,
-            creationflags=0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+            creationflags=_NO_WINDOW
         )
         if p.returncode == 0:
             return True, "Đã tạo tác vụ Task Scheduler thành công."
@@ -133,7 +135,7 @@ def enable_scheduled_task() -> tuple[bool, str]:
             ["powershell", "-NoProfile", "-Command", ps],
             capture_output=True,
             text=True,
-            creationflags=0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+            creationflags=_NO_WINDOW
         )
         if p.returncode == 0 and is_task_enabled():
             return True, "Đã tạo tác vụ Task Scheduler thành công."
@@ -148,7 +150,7 @@ def disable_scheduled_task() -> tuple[bool, str]:
             ["schtasks.exe", "/Delete", "/TN", TASK_NAME, "/F"],
             capture_output=True,
             text=True,
-            creationflags=0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+            creationflags=_NO_WINDOW
         )
         return True, "Đã xóa Task Scheduler."
     except Exception as e:
@@ -253,6 +255,3 @@ def set_startup_mode(target_mode: str) -> tuple[bool, str]:
         return False, msg
 
     return apply_startup_mode_internal(target_mode)
-
-def is_startup_enabled() -> bool:
-    return get_current_startup_mode() != MODE_NONE
