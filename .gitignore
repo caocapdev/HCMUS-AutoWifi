@@ -23,6 +23,7 @@ build/
 dist/
 *.spec
 *.exe.old
+*.exe
 *.old
 *.bak
 
