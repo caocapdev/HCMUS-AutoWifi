@@ -1,0 +1,72 @@
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+
+# PyInstaller Build Artifacts & Backups
+build/
+dist/
+*.spec
+*.exe.old
+*.old
+*.bak
+
+
+# Runtime Logs, Profiles & Temp Files
+*.log
+*.tmp
+*profile*/
+autowifi_profile_*/
+
+
+# Local Configuration & Session Stats
+# (Auto-generated on first launch from defaults)
+config.json
+!config.example.json
+
+
+# Captive Portal HTML Dumps & Assets
+portal_dump.html
+*.html
+*_files/
+
+
+# IDEs & Code Editors
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosv
+*.sln.docstates
+*.swp
+*.swo
+*~
+
+
+# Operating System Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+
+# AI Agents & Scratch Directories
+scratch/
+.agents/
+.gemini/

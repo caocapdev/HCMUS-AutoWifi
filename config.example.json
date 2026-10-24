@@ -1,0 +1,14 @@
+{
+    "start_with_windows": true,
+    "startup_mode": "task",
+    "auto_login_enabled": true,
+    "check_interval": 1,
+    "headless": true,
+    "notifications": false,
+    "close_to_tray": true,
+    "portal_redirect_url": "http://www.msftconnecttest.com/redirect",
+    "connecttest_url": "http://www.msftconnecttest.com/connecttest.txt",
+    "total_logins": 0,
+    "last_login_time": "",
+    "last_ssid": ""
+}
