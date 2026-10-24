@@ -79,4 +79,6 @@ HCMUS-AutoWifi/
 
 ## Giấy phép
 
-Mã nguồn mở phục vụ mục đích học tập và hỗ trợ cộng đồng sinh viên.
+Dự án này được phát hành theo giấy phép mã nguồn mở [GNU General Public License v3.0 (GPLv3)](LICENSE).
+
+Mọi cá nhân được tự do sử dụng, nghiên cứu, chỉnh sửa và phân phối lại mã nguồn theo các điều khoản trong tệp [LICENSE](LICENSE). Phục vụ mục đích học tập và hỗ trợ cộng đồng sinh viên.
