@@ -235,12 +235,16 @@ class PortalSolver:
                             time.sleep(step_delay)
                             if self.verify_internet(timeout=0.4):
                                 return self._build_success_result(strategy.name)
+                    elif status == "advanced_state":
+                        # State machine advanced (e.g. AWING completeAd) – loop back fast
+                        time.sleep(0.15)
+                        continue
                     elif status == "waiting_ad_timer":
                         time.sleep(0.4)
                 except Exception as eval_err:
                     self.log(f"Lỗi tương tác DOM: {eval_err}", "warning")
 
-                time.sleep(0.5)
+                time.sleep(0.25)
 
             if self.verify_internet(timeout=1.0):
                 return self._build_success_result(strategy.name)

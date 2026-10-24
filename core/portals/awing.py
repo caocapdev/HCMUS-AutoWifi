@@ -133,7 +133,8 @@ class AwingPortal(BasePortal):
         """
         Browser automation script for AWING portals:
         1. Submits #frmLogin directly if already present in DOM.
-        2. Triggers AWING state machine transition if available.
+        2. Drives the AWING state machine as far as possible in one call
+           (completeAd → nextView, repeated until frmLogin appears).
         3. Clicks primary connect / continue buttons.
         """
         return """
@@ -141,66 +142,60 @@ class AwingPortal(BasePortal):
             let result = { status: "searching", buttonClicked: null };
 
             try {
-                // 1. Check if frmLogin already present in DOM
-                let frm = document.getElementById("frmLogin") || document.querySelector("form[name='mikrotik']");
-                if (frm) {
-                    try {
-                        if (!frm.action || frm.action === window.location.href) {
-                            frm.action = "http://186.186.0.1/login";
-                        }
-                        frm.submit();
-                        result.status = "clicked";
-                        result.buttonClicked = "frmLogin (Bypass trực tiếp MikroTik)";
-                        return result;
-                    } catch(e) {}
+                // Helper: submit MikroTik login form immediately
+                function trySubmitForm() {
+                    let frm = document.getElementById("frmLogin") || document.querySelector("form[name='mikrotik']");
+                    if (frm) {
+                        try {
+                            if (!frm.action || frm.action === window.location.href) {
+                                frm.action = "http://186.186.0.1/login";
+                            }
+                            frm.submit();
+                            result.status = "clicked";
+                            result.buttonClicked = "frmLogin (Bypass trực tiếp MikroTik)";
+                            return true;
+                        } catch(e) {}
+                    }
+                    return false;
                 }
 
-                // 2. Advance AWING State Machine / Button
+                // 1. Try submitting existing frmLogin immediately
+                if (trySubmitForm()) return result;
+
+                // 2. Drive AWING State Machine as far as possible in one pass
                 let stateAdvanced = false;
                 if (window.awingStateMachineContextActions) {
-                    if (typeof window.awingStateMachineContextActions.completeAd === "function") {
-                        try {
-                            window.awingStateMachineContextActions.completeAd();
-                            stateAdvanced = true;
-                        } catch(e) {}
-                    }
-                    if (typeof window.awingStateMachineContextActions.nextView === "function") {
-                        try {
-                            window.awingStateMachineContextActions.nextView();
-                            stateAdvanced = true;
-                        } catch(e) {}
+                    let actions = window.awingStateMachineContextActions;
+                    // Chain: completeAd + nextView up to 3x, checking frmLogin after each step
+                    for (let i = 0; i < 3; i++) {
+                        let stepped = false;
+                        if (typeof actions.completeAd === "function") {
+                            try { actions.completeAd(); stepped = true; } catch(e) {}
+                        }
+                        if (typeof actions.nextView === "function") {
+                            try { actions.nextView(); stepped = true; } catch(e) {}
+                        }
+                        if (!stepped) break;
+                        stateAdvanced = true;
+                        // Check if frmLogin appeared after advancing state
+                        if (trySubmitForm()) return result;
                     }
                 }
 
+                // Click logo_button if available (advances AWING ad screens)
                 let logoBtn = document.getElementById("logo_button");
                 if (logoBtn && !logoBtn.disabled) {
-                    try {
-                        logoBtn.click();
-                        stateAdvanced = true;
-                    } catch(e) {}
-                }
-
-                // 3. Immediately re-check for frmLogin right after advancing state
-                frm = document.getElementById("frmLogin") || document.querySelector("form[name='mikrotik']");
-                if (frm) {
-                    try {
-                        if (!frm.action || frm.action === window.location.href) {
-                            frm.action = "http://186.186.0.1/login";
-                        }
-                        frm.submit();
-                        result.status = "clicked";
-                        result.buttonClicked = "frmLogin (Bypass trực tiếp MikroTik)";
-                        return result;
-                    } catch(e) {}
+                    try { logoBtn.click(); stateAdvanced = true; } catch(e) {}
+                    if (trySubmitForm()) return result;
                 }
 
                 if (stateAdvanced) {
-                    result.status = "clicked";
+                    result.status = "advanced_state";
                     result.buttonClicked = "completeAd (State Machine)";
                     return result;
                 }
 
-                // 4. Search for connect/continue buttons
+                // 3. Search for connect/continue buttons
                 let buttons = Array.from(document.querySelectorAll("button, a, div[role='button'], input[type='button'], input[type='submit']"));
                 let keywords = [
                     "tiếp tục để kết nối", "tiếp tục", "kết nối internet",
@@ -221,7 +216,7 @@ class AwingPortal(BasePortal):
                 }
 
                 if (target) {
-                    let isDisabled = target.disabled || 
+                    let isDisabled = target.disabled ||
                                      target.getAttribute("aria-disabled") === "true" ||
                                      target.classList.contains("disabled");
 
