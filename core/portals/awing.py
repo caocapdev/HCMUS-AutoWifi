@@ -115,6 +115,15 @@ class AwingPortal(BasePortal):
 
         # --- 2. Try MikroTik fast-path (airports, cafes, Wi-Mesh Rescue) ---
         try:
+            # Fetch HTML if not already fetched
+            if not html:
+                try:
+                    resp = session.get(portal_url, timeout=3.0, allow_redirects=True)
+                    portal_url = resp.url
+                    html = resp.text
+                except Exception:
+                    pass
+
             soup = BeautifulSoup(html, "html.parser")
             form = soup.find("form", {"name": "mikrotik"}) or soup.find("form", {"id": "frmLogin"})
 
@@ -132,7 +141,7 @@ class AwingPortal(BasePortal):
                         redirect_url = m.group(1).strip()
                 if redirect_url:
                     redirect_url = urllib.parse.urljoin(portal_url, redirect_url)
-                    resp = session.get(redirect_url, timeout=3.5, allow_redirects=True)
+                    resp = session.get(redirect_url, timeout=3.0, allow_redirects=True)
                     portal_url = resp.url
                     html = resp.text
                     soup = BeautifulSoup(html, "html.parser")
@@ -140,8 +149,9 @@ class AwingPortal(BasePortal):
 
             if not form:
                 for f in soup.find_all("form"):
+                    act = (f.get("action") or "").lower()
                     u_in = f.find("input", {"name": "username"})
-                    if u_in and "awing" in u_in.get("value", "").lower():
+                    if u_in or "186.186." in act or "mikrotik" in str(f.get("name", "")).lower():
                         form = f
                         break
 
@@ -151,20 +161,21 @@ class AwingPortal(BasePortal):
                 if not action.startswith("http"):
                     action = urllib.parse.urljoin(portal_url, action)
 
-                if u_in or "186.186." in action or "mikrotik" in str(form.get("name", "")).lower():
-                    data = {}
-                    for input_tag in form.find_all("input"):
-                        name = input_tag.get("name")
-                        if name:
-                            data[name] = input_tag.get("value", "")
+                data = {}
+                for input_tag in form.find_all("input"):
+                    name = input_tag.get("name")
+                    if name:
+                        data[name] = input_tag.get("value", "")
+
+                if data.get("username"):
                     method = (form.get("method") or "post").lower()
                     if method == "get":
-                        session.get(action, params=data, timeout=4)
+                        session.get(action, params=data, timeout=3.5)
                     else:
-                        session.post(action, data=data, timeout=4)
+                        session.post(action, data=data, timeout=3.5)
                     return {
                         "success": True,
-                        "message": f"Đã gửi xác thực AWING MikroTik ({data.get('username', 'auto')}) qua HTTP"
+                        "message": f"Đã gửi xác thực AWING MikroTik ({data.get('username')}) qua HTTP"
                     }
         except Exception:
             pass
@@ -174,19 +185,55 @@ class AwingPortal(BasePortal):
     def get_browser_script(self) -> str:
         """
         Browser automation script for AWING portals:
-        1. Clicks CPA voucher skip button: 'CHỈ KẾT NỐI WI-FI' (Circle K)
-        2. Clicks banner connect buttons: #acceptconnection_BannerOverflow, .connect-button
-        3. Drives AWING State Machine directly: completeAd() / nextView()
-        4. Clicks logo_button (tiếp tục để kết nối)
-        5. Handles MikroTik / Extreme Networks iframe authentications safely
+        1. Bypasses MikroTik 10s wait immediately via frm.submit()
+        2. Bypasses CPA voucher screens via 'CHỈ KẾT NỐI WI-FI' (Circle K)
+        3. Clicks banner connect buttons (#acceptconnection_BannerOverflow)
+        4. Drives AWING State Machine (completeAd / nextView)
+        5. Handles Extreme Networks iframe authentication safely
         """
         return """
         (function() {
             let result = { status: "searching", buttonClicked: null };
 
             try {
-                // 1. Check for CPA Voucher screen (Circle K style: "Miễn phí 01 Trà Chanh-Yuzu")
-                // Target: "CHỈ KẾT NỐI WI-FI" button to bypass voucher ad
+                // Helper: identify form gateway type
+                function isMikrotikForm(f) {
+                    if (!f) return false;
+                    let name = (f.getAttribute("name") || "").toLowerCase();
+                    let action = (f.getAttribute("action") || "").toLowerCase();
+                    let hasUser = !!f.querySelector("input[name='username']");
+                    let hasExtremeUser = !!f.querySelector("input[name='f_user']");
+                    let hasHsServer = !!f.querySelector("input[name='f_hs_server']");
+
+                    if (hasExtremeUser || hasHsServer || name === "extreme" || action.includes("hslogin.cgi")) {
+                        return false;
+                    }
+                    return name === "mikrotik" || action.includes("186.186.") || hasUser || window.location.href.includes("186.186.");
+                }
+
+                // 1. FAST-PATH: If MikroTik form already has username credentials, submit immediately
+                // This bypasses the entire 10-second AWING ad timer for Wi-Mesh Rescue / Airports!
+                let mForm = document.querySelector("form[name='mikrotik']")
+                    || (isMikrotikForm(document.getElementById("frmLogin")) ? document.getElementById("frmLogin") : null)
+                    || Array.from(document.querySelectorAll("form")).find(isMikrotikForm);
+
+                if (mForm) {
+                    let uIn = mForm.querySelector("input[name='username']");
+                    if (uIn && uIn.value) {
+                        try {
+                            if (!mForm.action || mForm.action === window.location.href) {
+                                mForm.action = "http://186.186.0.1/login";
+                            }
+                            mForm.submit();
+                            result.status = "clicked";
+                            result.buttonClicked = "frmLogin (Bypass trực tiếp MikroTik)";
+                            return result;
+                        } catch(e) {}
+                    }
+                }
+
+                // 2. Check for CPA Voucher screen (Circle K style: "Miễn phí 01 Trà Chanh-Yuzu")
+                // Target: "CHỈ KẾT NỐI WI-FI" button to bypass promotional voucher
                 let cpaSecondary = Array.from(document.querySelectorAll("button.option-secondary, .option-button, button, a"))
                     .find(b => {
                         let t = (b.innerText || b.textContent || "").toLowerCase();
@@ -201,8 +248,7 @@ class AwingPortal(BasePortal):
                     } catch(e) {}
                 }
 
-                // 2. Check for AWING banner connect buttons (Circle K 2/3 style, airport/cafe banners)
-                // Button: id="acceptconnection_BannerOverflow" or class="connect-button"
+                // 3. Check for AWING banner connect buttons (Circle K 2/3 style, airport/cafe banners)
                 let acceptBtn = document.getElementById("acceptconnection_BannerOverflow")
                     || document.querySelector("button.connect-button")
                     || Array.from(document.querySelectorAll("button, a")).find(b => {
@@ -218,49 +264,80 @@ class AwingPortal(BasePortal):
                     } catch(e) {}
                 }
 
-                // 3. Drive AWING State Machine directly
-                // If window.awingStateMachineContextActions is available, trigger completeAd()
-                // completeAd() transitions straight to "Submit" -> "Authentication" -> SubmitAuthenticationFormWithIframe()
+                // 4. Drive AWING State Machine directly
+                let stateAdvanced = false;
                 if (window.awingStateMachineContextActions) {
                     let actions = window.awingStateMachineContextActions;
                     if (typeof actions.completeAd === "function") {
                         try {
                             actions.completeAd();
-                            result.status = "clicked";
-                            result.buttonClicked = "completeAd (State Machine)";
-                            return result;
+                            stateAdvanced = true;
                         } catch(e) {}
                     }
                     if (typeof actions.nextView === "function") {
                         try {
                             actions.nextView();
-                            result.status = "advanced_state";
-                            result.buttonClicked = "nextView (State Machine)";
+                            stateAdvanced = true;
+                        } catch(e) {}
+                    }
+                }
+
+                // 5. Click logo_button (AWING ad transition button)
+                let logoBtn = document.getElementById("logo_button");
+                if (logoBtn && !logoBtn.disabled) {
+                    try {
+                        logoBtn.click();
+                        stateAdvanced = true;
+                    } catch(e) {}
+                }
+
+                // 6. IMMEDIATELY re-check for MikroTik form right after completeAd / state advance!
+                // As soon as completeAd loads credentials, submit without waiting for 10s timer!
+                let mFormPost = document.querySelector("form[name='mikrotik']")
+                    || (isMikrotikForm(document.getElementById("frmLogin")) ? document.getElementById("frmLogin") : null)
+                    || Array.from(document.querySelectorAll("form")).find(isMikrotikForm);
+
+                if (mFormPost) {
+                    let uInPost = mFormPost.querySelector("input[name='username']");
+                    if (uInPost && uInPost.value) {
+                        try {
+                            if (!mFormPost.action || mFormPost.action === window.location.href) {
+                                mFormPost.action = "http://186.186.0.1/login";
+                            }
+                            mFormPost.submit();
+                            result.status = "clicked";
+                            result.buttonClicked = "frmLogin (Bypass trực tiếp MikroTik)";
                             return result;
                         } catch(e) {}
                     }
                 }
 
-                // 4. Click logo_button (AWING ad transition button)
-                let logoBtn = document.getElementById("logo_button");
-                if (logoBtn && !logoBtn.disabled) {
-                    try {
-                        logoBtn.click();
-                        result.status = "advanced_state";
-                        result.buttonClicked = "logo_button (Tiếp tục)";
-                        return result;
-                    } catch(e) {}
-                }
-
-                // 5. If welcome/authenticating animation is currently running:
+                // 7. Check if welcome/authenticating animation is currently running:
                 let welcome = document.getElementById("awing-captive__welcome-loading");
                 if (welcome && getComputedStyle(welcome).display !== "none") {
+                    // Check if MikroTik form is sitting behind the welcome screen:
+                    let mBehind = document.querySelector("form[name='mikrotik']")
+                        || (isMikrotikForm(document.getElementById("frmLogin")) ? document.getElementById("frmLogin") : null);
+                    if (mBehind) {
+                        let uB = mBehind.querySelector("input[name='username']");
+                        if (uB && uB.value) {
+                            try {
+                                if (!mBehind.action || mBehind.action === window.location.href) {
+                                    mBehind.action = "http://186.186.0.1/login";
+                                }
+                                mBehind.submit();
+                                result.status = "clicked";
+                                result.buttonClicked = "frmLogin (Bypass trực tiếp MikroTik)";
+                                return result;
+                            } catch(e) {}
+                        }
+                    }
                     result.status = "waiting_ad_timer";
                     result.buttonClicked = "Đang kết nối Internet...";
                     return result;
                 }
 
-                // 6. Direct iframe authentication fallback if Extreme form is in DOM
+                // 8. Direct iframe authentication fallback if Extreme form is in DOM
                 let exForm = document.querySelector("form[name='extreme']");
                 if (exForm && window.awingUIActions && typeof window.awingUIActions.SubmitAuthenticationFormWithIframe === "function") {
                     try {
@@ -271,21 +348,13 @@ class AwingPortal(BasePortal):
                     } catch(e) {}
                 }
 
-                // 7. MikroTik standalone form fallback (airports / cafes / Wi-Mesh Rescue)
-                let mForm = document.querySelector("form[name='mikrotik']");
-                if (mForm) {
-                    try {
-                        if (!mForm.action || mForm.action === window.location.href) {
-                            mForm.action = "http://186.186.0.1/login";
-                        }
-                        mForm.submit();
-                        result.status = "clicked";
-                        result.buttonClicked = "frmLogin (MikroTik)";
-                        return result;
-                    } catch(e) {}
+                if (stateAdvanced) {
+                    result.status = "advanced_state";
+                    result.buttonClicked = "completeAd (State Machine)";
+                    return result;
                 }
 
-                // 8. Generic connect/continue buttons
+                // 9. Generic connect/continue buttons
                 let buttons = Array.from(document.querySelectorAll("button, a, div[role='button'], input[type='button'], input[type='submit']"));
                 let keywords = [
                     "tiếp tục để kết nối", "tiếp tục", "kết nối internet",

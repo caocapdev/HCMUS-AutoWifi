@@ -87,7 +87,7 @@ class PortalSolver:
         session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
         landing_url, page_html = target_url, ""
         try:
-            resp = session.get(target_url, timeout=1.5, allow_redirects=True)
+            resp = session.get(target_url, timeout=2.5, allow_redirects=True)
             landing_url, page_html = resp.url, resp.text
         except Exception:
             pass
