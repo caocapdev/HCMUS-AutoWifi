@@ -96,6 +96,13 @@ class PortalSolver:
         self.log(f"Loại portal: {portal_strategy.name}", "info")
 
         # Step 2: Fast Path - Direct HTTP / API Logon
+        # For AWING portals run HTTP and browser concurrently (race); for others keep sequential.
+        is_awing = "awing" in portal_strategy.name.lower()
+
+        if is_awing:
+            return self._solve_concurrent(session, landing_url, page_html, portal_strategy)
+
+        # Non-AWING: sequential fast-path then browser
         try:
             res_http = portal_strategy.solve_http(session, landing_url, page_html)
             if res_http and res_http.get("success"):
@@ -114,7 +121,67 @@ class PortalSolver:
         self.log(f"Khởi chạy trình duyệt: {os.path.basename(browser_exe)}", "info")
         return self._solve_with_browser(browser_exe, target_url, portal_strategy)
 
-    def _solve_with_browser(self, browser_exe: str, target_url: str, strategy: BasePortal) -> dict:
+    def _solve_concurrent(self, session, landing_url: str, page_html: str, strategy: BasePortal) -> dict:
+        """
+        Races direct-HTTP fast path against browser automation in parallel.
+        For AWING portals: the HTTP path tries to extract & submit the hidden
+        MikroTik form directly; the browser path clicks through the UI.
+        Whichever succeeds first wins; the other is abandoned.
+        """
+        browser_exe = find_system_browser()
+        done_event = threading.Event()   # set by whichever thread wins
+        result_holder = [None]           # [0] = winning result dict
+
+        # --- HTTP worker ---
+        def _http_worker():
+            try:
+                self.log("Đang thử đường kết nối trực tiếp (HTTP fast-path)...", "info")
+                res = strategy.solve_http(session, landing_url, page_html)
+                if done_event.is_set():
+                    return
+                if res and res.get("success"):
+                    self.log(res.get("message", "Đã gửi xác thực API fast-path"), "info")
+                    time.sleep(0.3)
+                    if self.verify_internet(1.2):
+                        result_holder[0] = self._build_success_result(strategy.name)
+                        done_event.set()
+            except Exception:
+                pass
+
+        # --- Browser worker ---
+        def _browser_worker():
+            if not browser_exe:
+                return
+            try:
+                self.log(f"Khởi chạy trình duyệt song song: {os.path.basename(browser_exe)}", "info")
+                res = self._solve_with_browser(browser_exe, landing_url, strategy,
+                                               stop_event=done_event)
+                if not done_event.is_set() and res and res.get("success"):
+                    result_holder[0] = res
+                    done_event.set()
+            except Exception:
+                pass
+
+        http_t = threading.Thread(target=_http_worker, daemon=True)
+        browser_t = threading.Thread(target=_browser_worker, daemon=True)
+
+        http_t.start()
+        browser_t.start()
+
+        # Wait up to _MAX_BROWSER_DURATION + 5s for either to finish
+        done_event.wait(timeout=_MAX_BROWSER_DURATION + 5)
+
+        if result_holder[0]:
+            return result_holder[0]
+
+        # Final check in case both threads finished just after the timeout
+        if self.verify_internet(1.0):
+            return self._build_success_result(strategy.name)
+
+        return {"success": False, "message": "Đã thử HTTP và trình duyệt nhưng chưa kết nối được Internet."}
+
+    def _solve_with_browser(self, browser_exe: str, target_url: str, strategy: BasePortal,
+                            stop_event: threading.Event = None) -> dict:
         port = find_available_port()
         temp_dir = os.path.join(tempfile.gettempdir(), f"autowifi_profile_{port}")
         os.makedirs(temp_dir, exist_ok=True)
@@ -197,6 +264,10 @@ class PortalSolver:
             time.sleep(0.5)
 
             while time.time() - start_time < _MAX_BROWSER_DURATION:
+                # Abort early if the concurrent HTTP path already succeeded
+                if stop_event and stop_event.is_set():
+                    return {"success": False, "message": "HTTP fast-path đã thành công trước."}
+
                 if self.verify_internet(timeout=0.4):
                     return self._build_success_result(strategy.name)
 
@@ -207,7 +278,7 @@ class PortalSolver:
                         "returnByValue": True
                     }, timeout=1.0)
                     cur_info = cur_url_res.get("result", {}).get("result", {}).get("value", "").lower()
-                    if strategy.name != "AWING Connect (Sân bay / Quán Cafe)" and any(k in cur_info for k in ["awing", "186.186.", "wi-fi | awing"]):
+                    if "awing" not in strategy.name.lower() and any(k in cur_info for k in ["awing", "186.186.", "wi-fi | awing"]):
                         from core.portals.awing import AwingPortal
                         strategy = AwingPortal()
                         js_script = strategy.get_browser_script()
@@ -227,7 +298,9 @@ class PortalSolver:
 
                     if status == "clicked":
                         self.log(f"Đã kích hoạt: '{button_name}'. Đang đợi kết nối...", "success")
-                        is_form_submit = any(k in (button_name or "").lower() for k in ["frmlogin", "submit", "mikrotik"])
+                        is_form_submit = any(k in (button_name or "").lower() for k in [
+                            "frmlogin", "submit", "mikrotik", "extreme", "completead", "authenticat"
+                        ])
                         max_wait_steps = _FORM_SUBMIT_WAIT_STEPS if is_form_submit else _QUICK_SUBMIT_WAIT_STEPS
                         step_delay = _FORM_SUBMIT_STEP_DELAY if is_form_submit else _QUICK_SUBMIT_STEP_DELAY
 
