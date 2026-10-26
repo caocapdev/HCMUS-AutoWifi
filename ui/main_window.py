@@ -44,7 +44,7 @@ class MainWindow:
         self._init_styles()
         self._build_ui()
         self._auto_scale_window()
-        self.log(f"Khởi động thành công (v{APP_VERSION}).", "info")
+        self.log(f"Khởi động thành công v{APP_VERSION}.", "info")
 
     def _init_styles(self):
         style = ttk.Style(self.root)
@@ -73,7 +73,7 @@ class MainWindow:
         title_box = tk.Frame(header, bg=BG_COLOR)
         title_box.pack(side=tk.LEFT)
         tk.Label(title_box, text="HCMUS AutoWifi", font=("Segoe UI", 18, "bold"), fg=TEXT_MAIN, bg=BG_COLOR).pack(anchor="w")
-        tk.Label(title_box, text="Tự động đăng nhập Wi-Fi (HCMUS, AWING, MikroTik, v.v.)", font=("Segoe UI", 9), fg=TEXT_MUTED, bg=BG_COLOR).pack(anchor="w", pady=(2, 0))
+        tk.Label(title_box, text="Tự động đăng nhập Wi-Fi (HCMUS, WiMesh Rescue, AWING, v.v.)", font=("Segoe UI", 9), fg=TEXT_MUTED, bg=BG_COLOR).pack(anchor="w", pady=(2, 0))
 
         self.status_pill = tk.Label(header, text="● Đang kiểm tra...", font=("Segoe UI", 10, "bold"), fg="#ffffff", bg=CARD_BG, padx=14, pady=6)
         self.status_pill.pack(side=tk.RIGHT, pady=4)
@@ -250,12 +250,12 @@ class MainWindow:
         current_mode = get_current_startup_mode()
 
         if new_mode != current_mode:
-            self.log(f"Đang cấu hình chế độ khởi động '{selected_label}'...", "info")
+            self.log(f"Cấu hình khởi động: {selected_label}...", "info")
             ok, msg = set_startup_mode(new_mode)
             if ok:
-                self.log(f"Đã cập nhật chế độ khởi động: {selected_label}", "success")
+                self.log(f"Cập nhật khởi động thành công: {selected_label}", "success")
             else:
-                self.log(f"Không thể áp dụng chế độ khởi động: {msg}", "error")
+                self.log(f"Lỗi thiết lập khởi động: {msg}", "error")
                 messagebox.showerror("Lỗi thiết lập khởi động", f"Không thể thiết lập chế độ {selected_label}:\n{msg}")
                 self.combo_startup.set(MODE_LABELS.get(current_mode, STARTUP_CHOICES[0]))
                 return
@@ -269,7 +269,7 @@ class MainWindow:
         except ValueError:
             pass
 
-        self.log("Đã cập nhật và lưu cài đặt cấu hình thành công.", "success")
+        self.log("Đã lưu cấu hình thành công.", "success")
         messagebox.showinfo("Cài đặt", "Cấu hình đã được lưu thành công!")
 
     def _clear_logs(self):

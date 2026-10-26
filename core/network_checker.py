@@ -77,18 +77,18 @@ def check_captive_portal() -> dict:
                 result.update({
                     "is_captive": True,
                     "portal_url": loc or redirect_url,
-                    "details": f"Phát hiện Captive Portal qua chuyển hướng (HTTP {r.status_code}) -> {loc or redirect_url}"
+                    "details": f"Phát hiện Captive Portal: {loc or redirect_url}"
                 })
                 return result
 
         if r.status_code == 200:
             if r.text.strip() == "Microsoft Connect Test":
-                result.update({"has_internet": True, "details": "Đã kết nối Internet trực tiếp (NCSI OK)"})
+                result.update({"has_internet": True, "details": "Đã kết nối Internet"})
                 return result
             result.update({
                 "is_captive": True,
                 "portal_url": redirect_url,
-                "details": "Trang Captive Portal trả về mã 200 thay vì NCSI string"
+                "details": "Phát hiện Captive Portal"
             })
             return result
     except Exception as e:
@@ -100,12 +100,12 @@ def check_captive_portal() -> dict:
         loc2 = r2.headers.get("Location", "")
         if r2.status_code in (301, 302, 303, 307, 308):
             if "go.microsoft.com" in loc2:
-                result.update({"has_internet": True, "details": "Kết nối Internet bình thường (Redirect Microsoft)"})
+                result.update({"has_internet": True, "details": "Đã kết nối Internet"})
             else:
                 result.update({
                     "is_captive": True,
                     "portal_url": loc2 or redirect_url,
-                    "details": f"Captive Portal phát hiện tại chuyển hướng: {loc2 or redirect_url}"
+                    "details": f"Phát hiện Captive Portal: {loc2 or redirect_url}"
                 })
     except Exception:
         pass

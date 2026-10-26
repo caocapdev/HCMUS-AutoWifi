@@ -15,7 +15,7 @@ class AwingPortal(BasePortal):
       - Vincom, Big C / GO!, KTX Wi-Mesh Rescue
     """
 
-    name = "AWING Connect (Sân bay / Quán Cafe / Cửa hàng tiện lợi)"
+    name = "AWING Connect"
 
     def match(self, url: str, html: str) -> bool:
         lower_url = url.lower()
@@ -108,7 +108,7 @@ class AwingPortal(BasePortal):
                 session.post(action, data=post_data, headers=headers, timeout=3.5)
                 return {
                     "success": True,
-                    "message": f"Đã gửi xác thực Extreme Networks ({hs_server}) qua HTTP"
+                    "message": f"Gửi xác thực Extreme Networks HTTP: {hs_server}"
                 }
         except Exception:
             pass
@@ -175,7 +175,7 @@ class AwingPortal(BasePortal):
                         session.post(action, data=data, timeout=3.5)
                     return {
                         "success": True,
-                        "message": f"Đã gửi xác thực AWING MikroTik ({data.get('username')}) qua HTTP"
+                        "message": f"Gửi xác thực MikroTik HTTP: {data.get('username')}"
                     }
         except Exception:
             pass
@@ -226,7 +226,7 @@ class AwingPortal(BasePortal):
                             }
                             mForm.submit();
                             result.status = "clicked";
-                            result.buttonClicked = "frmLogin (Bypass trực tiếp MikroTik)";
+                            result.buttonClicked = "Bypass MikroTik";
                             return result;
                         } catch(e) {}
                     }
@@ -243,7 +243,7 @@ class AwingPortal(BasePortal):
                     try {
                         cpaSecondary.click();
                         result.status = "advanced_state";
-                        result.buttonClicked = "CHỈ KẾT NỐI WI-FI (CPA Voucher)";
+                        result.buttonClicked = "Bỏ qua voucher";
                         return result;
                     } catch(e) {}
                 }
@@ -259,7 +259,7 @@ class AwingPortal(BasePortal):
                     try {
                         acceptBtn.click();
                         result.status = "advanced_state";
-                        result.buttonClicked = (acceptBtn.innerText || "KẾT NỐI INTERNET").trim();
+                        result.buttonClicked = "Kết nối Internet";
                         return result;
                     } catch(e) {}
                 }
@@ -306,7 +306,7 @@ class AwingPortal(BasePortal):
                             }
                             mFormPost.submit();
                             result.status = "clicked";
-                            result.buttonClicked = "frmLogin (Bypass trực tiếp MikroTik)";
+                            result.buttonClicked = "Bypass MikroTik";
                             return result;
                         } catch(e) {}
                     }
@@ -327,13 +327,13 @@ class AwingPortal(BasePortal):
                                 }
                                 mBehind.submit();
                                 result.status = "clicked";
-                                result.buttonClicked = "frmLogin (Bypass trực tiếp MikroTik)";
+                                result.buttonClicked = "Bypass MikroTik";
                                 return result;
                             } catch(e) {}
                         }
                     }
                     result.status = "waiting_ad_timer";
-                    result.buttonClicked = "Đang kết nối Internet...";
+                    result.buttonClicked = "Đang kết nối...";
                     return result;
                 }
 
@@ -343,14 +343,14 @@ class AwingPortal(BasePortal):
                     try {
                         window.awingUIActions.SubmitAuthenticationFormWithIframe();
                         result.status = "clicked";
-                        result.buttonClicked = "SubmitAuthenticationFormWithIframe (Extreme Networks)";
+                        result.buttonClicked = "Xác thực Extreme Networks";
                         return result;
                     } catch(e) {}
                 }
 
                 if (stateAdvanced) {
                     result.status = "advanced_state";
-                    result.buttonClicked = "completeAd (State Machine)";
+                    result.buttonClicked = "Bỏ qua quảng cáo";
                     return result;
                 }
 
@@ -375,7 +375,7 @@ class AwingPortal(BasePortal):
                     let isDisabled = target.disabled || target.getAttribute("aria-disabled") === "true" || target.classList.contains("disabled");
                     if (isDisabled) {
                         result.status = "waiting_ad_timer";
-                        result.buttonClicked = (target.innerText || "Đang đếm ngược").trim();
+                        result.buttonClicked = "Đang đếm ngược";
                         return result;
                     }
                     target.scrollIntoView({ behavior: 'instant', block: 'center' });
@@ -384,7 +384,7 @@ class AwingPortal(BasePortal):
                     target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
                     target.click();
                     result.status = "advanced_state";
-                    result.buttonClicked = (target.innerText || "KẾT NỐI INTERNET").trim();
+                    result.buttonClicked = "Kết nối Internet";
                     return result;
                 }
 

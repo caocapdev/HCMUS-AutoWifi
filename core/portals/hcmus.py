@@ -10,7 +10,7 @@ class HCMUSPortal(BasePortal):
     Backend: OPNsense Captive Portal.
     """
 
-    name = "ĐH Khoa học Tự nhiên (HCMUS)"
+    name = "HCMUS"
 
     def match(self, url: str, html: str) -> bool:
         lower_url = url.lower()
@@ -40,7 +40,7 @@ class HCMUSPortal(BasePortal):
             if data.get("clientState") == "AUTHORIZED":
                 return {
                     "success": True,
-                    "message": "Đã xác thực thành công qua HCMUS OPNsense API"
+                    "message": "Đã xác thực thành công qua OPNsense API"
                 }
         except Exception:
             pass
@@ -87,7 +87,7 @@ class HCMUSPortal(BasePortal):
                         anonButton.click();
                     }
                     result.status = "clicked";
-                    result.buttonClicked = "Đồng ý và kết nối Internet (#signin_anon)";
+                    result.buttonClicked = "Đồng ý và kết nối";
                     return result;
                 }
 
@@ -103,7 +103,7 @@ class HCMUSPortal(BasePortal):
                     pwButton.disabled = false;
                     pwButton.click();
                     result.status = "clicked";
-                    result.buttonClicked = "Đồng ý và đăng nhập (#signin)";
+                    result.buttonClicked = "Đồng ý và đăng nhập";
                     return result;
                 }
             } catch (err) {

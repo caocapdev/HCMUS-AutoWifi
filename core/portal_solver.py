@@ -80,7 +80,7 @@ class PortalSolver:
                 pass
 
         target_url = portal_url or config.get("portal_redirect_url", "http://www.msftconnecttest.com/redirect")
-        self.log(f"Bắt đầu kết nối portal: {target_url}", "info")
+        self.log(f"Kết nối portal: {target_url}", "info")
 
         # Step 1: Probe the portal to discover gateway URL and HTML content (1.5s timeout)
         session = requests.Session()
@@ -93,7 +93,7 @@ class PortalSolver:
             pass
 
         portal_strategy = find_portal_strategy(landing_url, page_html)
-        self.log(f"Loại portal: {portal_strategy.name}", "info")
+        self.log(f"Nhận diện: {portal_strategy.name}", "info")
 
         # Step 2: Fast Path - Direct HTTP / API Logon
         # For AWING portals run HTTP and browser concurrently (race); for others keep sequential.
@@ -106,12 +106,12 @@ class PortalSolver:
         try:
             res_http = portal_strategy.solve_http(session, landing_url, page_html)
             if res_http and res_http.get("success"):
-                self.log(res_http.get("message", "Đã xác thực thành công qua API"), "success")
+                self.log(res_http.get("message", "Xác thực API thành công"), "success")
                 time.sleep(0.3)
                 if self.verify_internet(0.8):
                     return self._build_success_result(portal_strategy.name)
         except Exception as e:
-            self.log(f"API fast-path chưa hoàn tất ({e}), chuyển qua trình duyệt...", "warning")
+            self.log(f"API chưa hoàn tất ({e}), chuyển sang trình duyệt...", "warning")
 
         # Step 3: Headless Browser Automation via CDP
         browser_exe = find_system_browser()
@@ -135,12 +135,12 @@ class PortalSolver:
         # --- HTTP worker ---
         def _http_worker():
             try:
-                self.log("Đang thử đường kết nối trực tiếp (HTTP fast-path)...", "info")
+                self.log("Thử kết nối trực tiếp HTTP...", "info")
                 res = strategy.solve_http(session, landing_url, page_html)
                 if done_event.is_set():
                     return
                 if res and res.get("success"):
-                    self.log(res.get("message", "Đã gửi xác thực API fast-path"), "info")
+                    self.log(res.get("message", "Đã gửi xác thực HTTP"), "info")
                     time.sleep(0.3)
                     if self.verify_internet(1.2):
                         result_holder[0] = self._build_success_result(strategy.name)
@@ -153,7 +153,7 @@ class PortalSolver:
             if not browser_exe:
                 return
             try:
-                self.log(f"Khởi chạy trình duyệt song song: {os.path.basename(browser_exe)}", "info")
+                self.log(f"Khởi chạy trình duyệt: {os.path.basename(browser_exe)}", "info")
                 res = self._solve_with_browser(browser_exe, landing_url, strategy,
                                                stop_event=done_event)
                 if not done_event.is_set() and res and res.get("success"):
@@ -266,7 +266,7 @@ class PortalSolver:
             while time.time() - start_time < _MAX_BROWSER_DURATION:
                 # Abort early if the concurrent HTTP path already succeeded
                 if stop_event and stop_event.is_set():
-                    return {"success": False, "message": "HTTP fast-path đã thành công trước."}
+                    return {"success": False, "message": "Kết nối HTTP thành công."}
 
                 if self.verify_internet(timeout=0.4):
                     return self._build_success_result(strategy.name)
@@ -282,7 +282,7 @@ class PortalSolver:
                         from core.portals.awing import AwingPortal
                         strategy = AwingPortal()
                         js_script = strategy.get_browser_script()
-                        self.log(f"Trình duyệt nhận diện: {strategy.name}", "info")
+                        self.log(f"Nhận diện: {strategy.name}", "info")
                 except Exception:
                     pass
 
@@ -297,7 +297,7 @@ class PortalSolver:
                     button_name = val.get("buttonClicked")
 
                     if status == "clicked":
-                        self.log(f"Đã kích hoạt: '{button_name}'. Đang đợi kết nối...", "success")
+                        self.log(f"Kích hoạt: {button_name}. Đang đợi kết nối...", "success")
                         is_form_submit = any(k in (button_name or "").lower() for k in [
                             "frmlogin", "submit", "mikrotik", "extreme", "completead", "authenticat"
                         ])
@@ -353,6 +353,6 @@ class PortalSolver:
         wifi = get_wifi_info()
         ssid = wifi.get("ssid", "Wi-Fi")
         config.increment_logins(ssid)
-        msg = f"Đã kết nối Internet thành công vào {ssid} ({portal_name})!"
+        msg = f"Kết nối Internet thành công: {ssid} - {portal_name}!"
         self.log(msg, "success")
         return {"success": True, "message": msg, "ssid": ssid}

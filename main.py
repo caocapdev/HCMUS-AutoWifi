@@ -55,7 +55,7 @@ class AutoWifiApp:
 
         if self.start_in_tray:
             self.main_window.hide_to_tray()
-            self.main_window.log("Chương trình đang chạy ngầm trong khay hệ thống.", "info")
+            self.main_window.log("Đang chạy ngầm trong khay hệ thống.", "info")
 
         # Load UI hoàn tất trước rồi mới tiến hành kiểm tra / cài đặt Task Scheduler
         self.main_window.root.after(600, self._setup_startup_on_first_run)
@@ -68,17 +68,17 @@ class AutoWifiApp:
             current_mode = get_current_startup_mode()
 
             if current_mode != configured_mode or (configured_mode == "task" and not is_task_enabled()):
-                self.main_window.log("Đang tiến hành cài đặt khởi động Task Scheduler...", "info")
+                self.main_window.log("Cài đặt khởi động Task Scheduler...", "info")
                 ok, _ = set_startup_mode(configured_mode)
                 if ok and is_task_enabled():
-                    self.main_window.log("Đã cài đặt thành công tác vụ khởi động cùng Windows (Task Scheduler)!", "success")
+                    self.main_window.log("Đã cài đặt khởi động Task Scheduler.", "success")
                 elif not ok and configured_mode == "task" and not is_task_enabled():
-                    self.main_window.log("Chưa thể kích hoạt Task Scheduler, chuyển sang Registry Run...", "warning")
+                    self.main_window.log("Chưa thể bật Task Scheduler, chuyển sang Registry...", "warning")
                     enable_registry()
                     config.set("startup_mode", "registry")
-                    self.main_window.log("Đã kích hoạt khởi động cùng Windows qua Registry Run.", "info")
+                    self.main_window.log("Đã kích hoạt khởi động Registry.", "info")
             elif configured_mode == "task" and is_task_enabled():
-                self.main_window.log("Khởi động cùng Windows: Task Scheduler đang hoạt động.", "info")
+                self.main_window.log("Khởi động cùng Windows: Task Scheduler.", "info")
 
             self.main_window.sync_startup_mode_ui()
 
@@ -105,14 +105,14 @@ class AutoWifiApp:
         self.main_window.show_window()
 
     def trigger_check_now(self):
-        self.main_window.log("Đang kiểm tra trạng thái kết nối mạng...", "info")
+        self.main_window.log("Kiểm tra kết nối mạng...", "info")
         threading.Thread(target=self._check_network_once, daemon=True).start()
 
     def trigger_manual_login(self):
         if self.is_logging_in:
-            self.main_window.log("Quá trình đăng nhập đang diễn ra, vui lòng đợi...", "warning")
+            self.main_window.log("Đang đăng nhập, vui lòng đợi...", "warning")
             return
-        self.main_window.log("Thao tác thủ công: Bắt đầu đăng nhập Wi-Fi...", "info")
+        self.main_window.log("Bắt đầu đăng nhập Wi-Fi...", "info")
         cap = check_captive_portal()
         threading.Thread(target=self._perform_login, args=(cap.get("portal_url", ""),), daemon=True).start()
 
@@ -134,14 +134,14 @@ class AutoWifiApp:
         ssid = wifi.get("ssid", "Wi-Fi")
 
         if captive.get("has_internet"):
-            self.tray.update_status("online", f"Đã kết nối ({ssid})")
+            self.tray.update_status("online", f"Đã kết nối: {ssid}")
         elif captive.get("is_captive"):
-            self.tray.update_status("captive", f"Phát hiện cổng đăng nhập ({ssid})")
+            self.tray.update_status("captive", f"Yêu cầu đăng nhập: {ssid}")
             now = time.time()
             if config.get("auto_login_enabled", True) and not self.is_logging_in:
                 if now - self.last_attempt_time >= 8:
                     self.last_attempt_time = now
-                    self.main_window.log(f"Phát hiện Wi-Fi '{ssid}' yêu cầu đăng nhập captive portal!", "warning")
+                    self.main_window.log(f"Phát hiện '{ssid}' yêu cầu đăng nhập portal.", "warning")
                     threading.Thread(target=self._perform_login, args=(captive.get("portal_url", ""),), daemon=True).start()
         else:
             self.tray.update_status("offline", "Không có kết nối mạng")
@@ -153,11 +153,11 @@ class AutoWifiApp:
         self.tray.update_status("working", "Đang đăng nhập...")
         try:
             ssid = get_wifi_info().get("ssid", "Wi-Fi")
-            self.main_window.log(f"Đang đăng nhập vào mạng: {ssid}...", "info")
+            self.main_window.log(f"Đang đăng nhập: {ssid}...", "info")
             res = self.solver.solve(portal_url=portal_url)
             if res.get("success"):
                 msg = res.get("message", "Đã kết nối Internet thành công!")
-                self.tray.update_status("online", f"Đã kết nối ({ssid})")
+                self.tray.update_status("online", f"Đã kết nối: {ssid}")
                 show_notification("HCMUS AutoWifi", msg)
             else:
                 self.main_window.log(res.get("message", "Đăng nhập thất bại."), "warning")
@@ -197,26 +197,26 @@ def check_single_instance() -> bool:
         return True
 
 def main():
-    parser = argparse.ArgumentParser(description="HCMUS AutoWifi - Auto login captive portal")
+    parser = argparse.ArgumentParser(description="HCMUS AutoWifi - Tự động đăng nhập Wi-Fi")
     parser.add_argument("--version", "-v", action="version", version=f"%(prog)s {APP_VERSION}")
-    parser.add_argument("--tray", action="store_true", help="Khởi động ẩn trong khay hệ thống (System Tray)")
-    parser.add_argument("--login-now", action="store_true", help="Thực hiện đăng nhập ngay lập tức rồi thoát")
+    parser.add_argument("--tray", action="store_true", help="Khởi động ẩn trong khay hệ thống")
+    parser.add_argument("--login-now", action="store_true", help="Đăng nhập ngay rồi thoát")
     parser.add_argument("--set-startup-elevated", type=str, choices=["none", "registry", "task"], help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     if args.set_startup_elevated:
         ok, msg = apply_startup_mode_internal(args.set_startup_elevated)
-        print(f"[Elevated] Cài đặt '{args.set_startup_elevated}': ok={ok}, msg={msg}")
+        print(f"[Khởi động] Cài đặt '{args.set_startup_elevated}': ok={ok}, msg={msg}")
         sys.exit(0 if ok else 1)
 
     if args.login_now:
-        print("[CLI] Đang thực hiện đăng nhập captive portal...")
+        print("[CLI] Đang đăng nhập portal...")
         res = PortalSolver().solve()
-        print(f"[CLI] Kết quả: {res}")
+        print(f"[CLI] Kết quả: {res.get('message', res)}")
         sys.exit(0 if res.get("success") else 1)
 
     if not check_single_instance():
-        print("[App] Một phiên bản AutoWifi đã đang chạy. Đã hiển thị cửa sổ hiện tại.")
+        print("[App] AutoWifi đang chạy. Đã hiện cửa sổ.")
         sys.exit(0)
 
     app = AutoWifiApp(start_in_tray=args.tray)

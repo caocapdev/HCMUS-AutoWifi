@@ -10,7 +10,7 @@ class GenericPortal(BasePortal):
     (MikroTik RouterOS, Aruba Networks, Cisco Meraki, pfSense, hotels, cafes).
     """
 
-    name = "Cổng tiêu chuẩn (Generic Portal)"
+    name = "Cổng tiêu chuẩn"
 
     def match(self, url: str, html: str) -> bool:
         # Match any portal as the default fallback
@@ -54,7 +54,7 @@ class GenericPortal(BasePortal):
 
             return {
                 "success": True,
-                "message": "Đã gửi form đăng nhập tiêu chuẩn qua HTTP"
+                "message": "Gửi form đăng nhập HTTP"
             }
         except Exception:
             return None
@@ -76,7 +76,7 @@ class GenericPortal(BasePortal):
                     try {
                         frm.submit();
                         result.status = "clicked";
-                        result.buttonClicked = "frmLogin (MikroTik Form)";
+                        result.buttonClicked = "Form MikroTik";
                         return result;
                     } catch(e) {}
                 }

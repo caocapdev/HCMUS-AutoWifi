@@ -62,7 +62,7 @@ class TrayIconManager:
             pystray.MenuItem("Kiểm tra kết nối", lambda i, item: self.callbacks.get("check_now", lambda: None)()),
             pystray.MenuItem("Mở giao diện chính", lambda i, item: self.callbacks.get("show_window", lambda: None)(), default=True),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Khởi động (Startup)", pystray.Menu(*startup_items)),
+            pystray.MenuItem("Khởi động cùng Windows", pystray.Menu(*startup_items)),
             pystray.MenuItem("Thoát", lambda i, item: self.callbacks.get("exit_app", lambda: None)())
         )
         self.icon = pystray.Icon("HCMUSAutoWifi", img, "HCMUS AutoWifi", menu)
