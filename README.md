@@ -4,7 +4,7 @@
 
 ## Sử dụng nhanh
 
-- Tải file [HCMUS_AutoWifi.exe](https://github.com/caocapdev/HCMUS-AutoWifi/releases/download/v1.0.0/HCMUS_AutoWifi.exe) từ mục Releases.
+- Tải file [HCMUS_AutoWifi.exe](https://github.com/caocapdev/HCMUS-AutoWifi/releases/latest/download/HCMUS_AutoWifi.exe) từ mục Releases.
 - Chạy file. Ứng dụng sẽ tự động chạy nền trong khay hệ thống (System Tray) và đăng ký tự khởi động cùng Windows.
 - Khi kết nối vào Wi-Fi cần đăng nhập (`HCMUS-STUDENT`, `HCMUS-PUBLIC`, `Highlands Coffee`, v.v.), ứng dụng sẽ tự động chấp nhận điều khoản và kết nối Internet.
 

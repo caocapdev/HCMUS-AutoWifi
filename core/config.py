@@ -2,7 +2,7 @@ import os
 import json
 import sys
 
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 AUTHOR_URL = "https://caocap.dev"
 GITHUB_REPO_URL = "https://github.com/caocapdev/HCMUS-AutoWifi"
 
