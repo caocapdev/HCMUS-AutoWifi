@@ -29,6 +29,7 @@ class AwingPortal(BasePortal):
         indicators = [
             "awingconnect.vn",
             "v1.awingconnect.vn",
+            "v2.awingconnect.vn",
             "awing.vn",
             "powered by awing",
             "ads by awing",
@@ -44,9 +45,12 @@ class AwingPortal(BasePortal):
             "frmlogin",
             'name="mikrotik"',
             'name="extreme"',
+            'name="ciscomeraki"',
+            "ciscomeraki",
             "awingconstants",
             "awingcaptiveutils",
             "hslogin.cgi",
+            "network-auth.com",
         ]
         if any(ind in lower_html for ind in indicators):
             return True
@@ -59,15 +63,17 @@ class AwingPortal(BasePortal):
 
     def solve_http(self, session: requests.Session, portal_url: str, html: str) -> Optional[Dict[str, Any]]:
         """
-        Direct HTTP Fast Path supports two AWING gateway types:
+        Direct HTTP Fast Path supports three AWING gateway types:
 
-        A) Extreme Networks (172.x.x.x:880/cgi-bin/hslogin.cgi) - Circle K, GS25, Ministop
+        A) Extreme Networks (172.x.x.x:880/cgi-bin/hslogin.cgi) - Circle K, Ministop
            Parameters: hs_server and Qv from portal redirect URL
            Credentials: f_user=awing120, f_pass=Awing120@2018
-           POST is sent directly to http://{hs_server}:880/cgi-bin/hslogin.cgi
 
-        B) MikroTik (186.186.0.1/login) - Airports, cafes, Wi-Mesh Rescue
-           Extracted from HTML form[name='mikrotik'] or #frmLogin
+        B) Cisco Meraki (apac.network-auth.com/splash/.../login) - GS25
+           Form: form[name='ciscoMeraki']
+
+        C) MikroTik (186.186.0.1/login) - Airports, cafes, Wi-Mesh Rescue
+           Form: form[name='mikrotik']
         """
         import time as _time
 
@@ -81,7 +87,7 @@ class AwingPortal(BasePortal):
             # If not in URL, try extracting from HTML form
             if (not hs_server or not qv) and html:
                 soup = BeautifulSoup(html, "html.parser")
-                form = soup.find("form", {"name": "extreme"}) or soup.find("form", {"id": "frmLogin"})
+                form = soup.find("form", {"name": "extreme"})
                 if form:
                     if not hs_server:
                         hs_in = form.find("input", {"name": "f_hs_server"})
@@ -113,9 +119,8 @@ class AwingPortal(BasePortal):
         except Exception:
             pass
 
-        # --- 2. Try MikroTik fast-path (airports, cafes, Wi-Mesh Rescue) ---
+        # --- 2. Try Cisco Meraki fast-path (GS25, retail stores) ---
         try:
-            # Fetch HTML if not already fetched
             if not html:
                 try:
                     resp = session.get(portal_url, timeout=3.0, allow_redirects=True)
@@ -124,59 +129,112 @@ class AwingPortal(BasePortal):
                 except Exception:
                     pass
 
-            soup = BeautifulSoup(html, "html.parser")
-            form = soup.find("form", {"name": "mikrotik"}) or soup.find("form", {"id": "frmLogin"})
+            if html:
+                soup = BeautifulSoup(html, "html.parser")
+                meraki_form = soup.find("form", {"name": "ciscoMeraki"}) or soup.find("form", id="frmLogin")
+                if not meraki_form and ("network-auth.com" in portal_url or "splash" in portal_url):
+                    # Follow redirect to AWING portal if needed
+                    redirect_url = None
+                    meta = soup.find("meta", attrs={"http-equiv": re.compile(r"refresh", re.I)})
+                    if meta and meta.get("content"):
+                        m = re.search(r"url=['\"]?([^'\"]+)", meta["content"], re.I)
+                        if m:
+                            redirect_url = m.group(1).strip()
+                    if not redirect_url:
+                        m = re.search(r"(?:window\.)?location(?:\.href)?\s*=\s*['\"]([^'\"]+)['\"]", html, re.I)
+                        if m:
+                            redirect_url = m.group(1).strip()
+                    if redirect_url:
+                        redirect_url = urllib.parse.urljoin(portal_url, redirect_url)
+                        resp = session.get(redirect_url, timeout=3.0, allow_redirects=True)
+                        portal_url = resp.url
+                        html = resp.text
+                        soup = BeautifulSoup(html, "html.parser")
+                        meraki_form = soup.find("form", {"name": "ciscoMeraki"}) or soup.find("form", id="frmLogin")
 
-            if not form:
-                # Follow redirects if needed
-                redirect_url = None
-                meta = soup.find("meta", attrs={"http-equiv": re.compile(r"refresh", re.I)})
-                if meta and meta.get("content"):
-                    m = re.search(r"url=['\"]?([^'\"]+)", meta["content"], re.I)
-                    if m:
-                        redirect_url = m.group(1).strip()
-                if not redirect_url:
-                    m = re.search(r"(?:window\.)?location(?:\.href)?\s*=\s*['\"]([^'\"]+)['\"]", html, re.I)
-                    if m:
-                        redirect_url = m.group(1).strip()
-                if redirect_url:
-                    redirect_url = urllib.parse.urljoin(portal_url, redirect_url)
-                    resp = session.get(redirect_url, timeout=3.0, allow_redirects=True)
+                if meraki_form:
+                    m_action = meraki_form.get("action") or ""
+                    m_name = (meraki_form.get("name") or "").lower()
+                    if m_name == "ciscomeraki" or "network-auth.com" in m_action:
+                        data = {}
+                        for input_tag in meraki_form.find_all("input"):
+                            name = input_tag.get("name")
+                            if name:
+                                data[name] = input_tag.get("value", "")
+                        if data.get("username") and m_action.startswith("http"):
+                            headers = {
+                                "Referer": portal_url,
+                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                            }
+                            session.post(m_action, data=data, headers=headers, timeout=3.5)
+                            return {
+                                "success": True,
+                                "message": f"Gửi xác thực Cisco Meraki HTTP: {data.get('username')}"
+                            }
+        except Exception:
+            pass
+
+        # --- 3. Try MikroTik fast-path (airports, cafes, Wi-Mesh Rescue) ---
+        try:
+            if not html:
+                try:
+                    resp = session.get(portal_url, timeout=3.0, allow_redirects=True)
                     portal_url = resp.url
                     html = resp.text
-                    soup = BeautifulSoup(html, "html.parser")
-                    form = soup.find("form", {"name": "mikrotik"}) or soup.find("form", {"id": "frmLogin"})
+                except Exception:
+                    pass
 
-            if not form:
-                for f in soup.find_all("form"):
-                    act = (f.get("action") or "").lower()
-                    u_in = f.find("input", {"name": "username"})
-                    if u_in or "186.186." in act or "mikrotik" in str(f.get("name", "")).lower():
-                        form = f
-                        break
+            if html:
+                soup = BeautifulSoup(html, "html.parser")
+                form = soup.find("form", {"name": "mikrotik"})
 
-            if form:
-                u_in = form.find("input", {"name": "username"})
-                action = form.get("action") or "http://186.186.0.1/login"
-                if not action.startswith("http"):
-                    action = urllib.parse.urljoin(portal_url, action)
+                if not form:
+                    # Follow redirects if needed
+                    redirect_url = None
+                    meta = soup.find("meta", attrs={"http-equiv": re.compile(r"refresh", re.I)})
+                    if meta and meta.get("content"):
+                        m = re.search(r"url=['\"]?([^'\"]+)", meta["content"], re.I)
+                        if m:
+                            redirect_url = m.group(1).strip()
+                    if not redirect_url:
+                        m = re.search(r"(?:window\.)?location(?:\.href)?\s*=\s*['\"]([^'\"]+)['\"]", html, re.I)
+                        if m:
+                            redirect_url = m.group(1).strip()
+                    if redirect_url:
+                        redirect_url = urllib.parse.urljoin(portal_url, redirect_url)
+                        resp = session.get(redirect_url, timeout=3.0, allow_redirects=True)
+                        portal_url = resp.url
+                        html = resp.text
+                        soup = BeautifulSoup(html, "html.parser")
+                        form = soup.find("form", {"name": "mikrotik"})
 
-                data = {}
-                for input_tag in form.find_all("input"):
-                    name = input_tag.get("name")
-                    if name:
-                        data[name] = input_tag.get("value", "")
+                if not form and "186.186." in portal_url:
+                    form = soup.find("form", {"id": "frmLogin"})
 
-                if data.get("username"):
-                    method = (form.get("method") or "post").lower()
-                    if method == "get":
-                        session.get(action, params=data, timeout=3.5)
-                    else:
-                        session.post(action, data=data, timeout=3.5)
-                    return {
-                        "success": True,
-                        "message": f"Gửi xác thực MikroTik HTTP: {data.get('username')}"
-                    }
+                if form:
+                    action = form.get("action") or "http://186.186.0.1/login"
+                    form_name = (form.get("name") or "").lower()
+                    # Strictly ensure it is MikroTik, not Meraki or Extreme
+                    if form_name == "mikrotik" or "186.186." in action or "186.186." in portal_url:
+                        if not action.startswith("http"):
+                            action = urllib.parse.urljoin(portal_url, action)
+
+                        data = {}
+                        for input_tag in form.find_all("input"):
+                            name = input_tag.get("name")
+                            if name:
+                                data[name] = input_tag.get("value", "")
+
+                        if data.get("username"):
+                            method = (form.get("method") or "post").lower()
+                            if method == "get":
+                                session.get(action, params=data, timeout=3.5)
+                            else:
+                                session.post(action, data=data, timeout=3.5)
+                            return {
+                                "success": True,
+                                "message": f"Gửi xác thực MikroTik HTTP: {data.get('username')}"
+                            }
         except Exception:
             pass
 
@@ -184,99 +242,141 @@ class AwingPortal(BasePortal):
 
     def get_browser_script(self) -> str:
         """
-        Browser automation script for AWING portals:
-        1. Bypasses MikroTik 10s wait immediately via frm.submit()
-        2. Bypasses CPA voucher screens via 'CHỈ KẾT NỐI WI-FI' (Circle K)
-        3. Clicks banner connect buttons (#acceptconnection_BannerOverflow)
-        4. Drives AWING State Machine (completeAd / nextView)
-        5. Handles Extreme Networks iframe authentication safely
+        Universal browser automation script for AWING portals.
+        Prioritizes traditional button clicking (phương pháp bấm nút thủ công)
+        so that ANY current or future AWING Wi-Fi network operates reliably!
         """
         return """
         (function() {
             let result = { status: "searching", buttonClicked: null };
 
             try {
-                // Helper: identify form gateway type
-                function isMikrotikForm(f) {
+                // Helper: safely check element visibility
+                function isVisible(el) {
+                    if (!el) return false;
+                    try {
+                        if (typeof el.checkVisibility === 'function') {
+                            return el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+                        }
+                        let style = window.getComputedStyle(el);
+                        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                        return el.offsetParent !== null || (el.getClientRects && el.getClientRects().length > 0);
+                    } catch(e) {
+                        return true;
+                    }
+                }
+
+                // Helper: safely click an element with full mouse event simulation
+                function simulateClick(el) {
+                    if (!el) return false;
+                    try { el.scrollIntoView({ behavior: 'instant', block: 'center' }); } catch(e) {}
+                    try {
+                        if (typeof MouseEvent !== 'undefined') {
+                            el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }));
+                            el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                            el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                        }
+                    } catch(e) {}
+                    try { el.click(); } catch(e) {}
+                    return true;
+                }
+
+                // Helper: identify true MikroTik gateway (Wi-Mesh Rescue / 186.186.x.x)
+                function isTrueMikrotikForm(f) {
                     if (!f) return false;
                     let name = (f.getAttribute("name") || "").toLowerCase();
                     let action = (f.getAttribute("action") || "").toLowerCase();
-                    let hasUser = !!f.querySelector("input[name='username']");
-                    let hasExtremeUser = !!f.querySelector("input[name='f_user']");
-                    let hasHsServer = !!f.querySelector("input[name='f_hs_server']");
-
-                    if (hasExtremeUser || hasHsServer || name === "extreme" || action.includes("hslogin.cgi")) {
+                    let href = window.location.href.toLowerCase();
+                    if (name === "ciscomeraki" || name === "extreme" || action.includes("hslogin.cgi") || action.includes("network-auth.com")) {
                         return false;
                     }
-                    return name === "mikrotik" || action.includes("186.186.") || hasUser || window.location.href.includes("186.186.");
+                    return name === "mikrotik" || action.includes("186.186.") || href.includes("186.186.");
                 }
 
-                // 1. FAST-PATH: If MikroTik form already has username credentials, submit immediately
-                // This bypasses the entire 10-second AWING ad timer for Wi-Mesh Rescue / Airports!
-                let mForm = document.querySelector("form[name='mikrotik']")
-                    || (isMikrotikForm(document.getElementById("frmLogin")) ? document.getElementById("frmLogin") : null)
-                    || Array.from(document.querySelectorAll("form")).find(isMikrotikForm);
-
-                if (mForm) {
-                    let uIn = mForm.querySelector("input[name='username']");
-                    if (uIn && uIn.value) {
-                        try {
-                            if (!mForm.action || mForm.action === window.location.href) {
-                                mForm.action = "http://186.186.0.1/login";
-                            }
-                            mForm.submit();
-                            result.status = "clicked";
-                            result.buttonClicked = "Bypass MikroTik";
-                            return result;
-                        } catch(e) {}
-                    }
-                }
-
-                // 2. Check for CPA Voucher screen (Circle K style: "Miễn phí 01 Trà Chanh-Yuzu")
-                // Target: "CHỈ KẾT NỐI WI-FI" button to bypass promotional voucher
+                // 1. Check for promotional voucher / CPA overlay (Circle K style: "Miễn phí 01 Trà Chanh-Yuzu")
+                // Target: "CHỈ KẾT NỐI WI-FI" / "BỎ QUA" to reveal main connect screen
                 let cpaSecondary = Array.from(document.querySelectorAll("button.option-secondary, .option-button, button, a"))
                     .find(b => {
                         let t = (b.innerText || b.textContent || "").toLowerCase();
-                        return t.includes("chỉ kết nối") || t.includes("bỏ qua") || b.classList.contains("option-secondary");
+                        return (t.includes("chỉ kết nối") || t.includes("bỏ qua") || b.classList.contains("option-secondary")) && isVisible(b);
                     });
                 if (cpaSecondary) {
                     try {
-                        cpaSecondary.click();
+                        simulateClick(cpaSecondary);
                         result.status = "advanced_state";
                         result.buttonClicked = "Bỏ qua voucher";
                         return result;
                     } catch(e) {}
                 }
 
-                // 3. Check for AWING banner connect buttons (Circle K 2/3 style, airport/cafe banners)
+                // 2. TRADITIONAL BUTTON CLICKING (PHƯƠNG PHÁP BẤM NÚT THỦ CÔNG)
+                // Primary interactive connect button: #acceptconnection_BannerOverflow, button.connect-button, etc.
+                // Ensures GS25, Circle K, Airports, Cafes, and ALL future AWING networks work naturally!
                 let acceptBtn = document.getElementById("acceptconnection_BannerOverflow")
                     || document.querySelector("button.connect-button")
-                    || Array.from(document.querySelectorAll("button, a")).find(b => {
+                    || Array.from(document.querySelectorAll("button, a, div[role='button']")).find(b => {
                         let t = (b.innerText || b.textContent || "").trim().toLowerCase();
-                        return t.includes("kết nối internet") || t.includes("internet access");
+                        return (t.includes("kết nối internet") || t.includes("internet access") || t.includes("tiếp tục để kết nối") || t.includes("kết nối ngay"))
+                            && b.id !== "acceptconnection_BannerOverflow" && isVisible(b);
                     });
-                if (acceptBtn && !acceptBtn.disabled) {
+
+                if (acceptBtn && isVisible(acceptBtn)) {
+                    let isDisabled = acceptBtn.disabled || acceptBtn.getAttribute("aria-disabled") === "true" || acceptBtn.classList.contains("disabled");
+                    if (isDisabled) {
+                        result.status = "waiting_ad_timer";
+                        result.buttonClicked = "Đang đếm ngược";
+                        return result;
+                    }
+                    if (acceptBtn.dataset && acceptBtn.dataset.autowificlicked === "true") {
+                        result.status = "waiting_ad_timer";
+                        result.buttonClicked = "Đang kết nối...";
+                        return result;
+                    }
                     try {
-                        acceptBtn.click();
-                        result.status = "advanced_state";
+                        acceptBtn.dataset.autowificlicked = "true";
+                        simulateClick(acceptBtn);
+                        if (window.awingStateMachineContextActions && typeof window.awingStateMachineContextActions.nextView === "function") {
+                            try { window.awingStateMachineContextActions.nextView(); } catch(e) {}
+                        }
+                        result.status = "clicked";
                         result.buttonClicked = "Kết nối Internet";
                         return result;
                     } catch(e) {}
                 }
 
-                // 4. Drive AWING State Machine directly
+                // 3. Clickable banner image (#banner)
+                let bannerImg = document.getElementById("banner");
+                if (bannerImg && bannerImg.getAttribute("onclick") && isVisible(bannerImg)) {
+                    if (bannerImg.dataset && bannerImg.dataset.autowificlicked === "true") {
+                        result.status = "waiting_ad_timer";
+                        result.buttonClicked = "Đang kết nối...";
+                        return result;
+                    }
+                    try {
+                        bannerImg.dataset.autowificlicked = "true";
+                        simulateClick(bannerImg);
+                        if (window.awingStateMachineContextActions && typeof window.awingStateMachineContextActions.nextView === "function") {
+                            try { window.awingStateMachineContextActions.nextView(); } catch(e) {}
+                        }
+                        result.status = "clicked";
+                        result.buttonClicked = "Kết nối Internet";
+                        return result;
+                    } catch(e) {}
+                }
+
+                // 4. Drive AWING State Machine directly if needed (completeAd / nextView)
                 let stateAdvanced = false;
                 if (window.awingStateMachineContextActions) {
                     let actions = window.awingStateMachineContextActions;
-                    if (typeof actions.completeAd === "function") {
-                        try {
-                            actions.completeAd();
-                            stateAdvanced = true;
-                        } catch(e) {}
-                    }
                     if (typeof actions.nextView === "function") {
                         try {
                             actions.nextView();
+                            stateAdvanced = true;
+                        } catch(e) {}
+                    }
+                    if (typeof actions.completeAd === "function") {
+                        try {
+                            actions.completeAd();
                             stateAdvanced = true;
                         } catch(e) {}
                     }
@@ -284,41 +384,26 @@ class AwingPortal(BasePortal):
 
                 // 5. Click logo_button (AWING ad transition button)
                 let logoBtn = document.getElementById("logo_button");
-                if (logoBtn && !logoBtn.disabled) {
+                if (logoBtn && !logoBtn.disabled && isVisible(logoBtn)) {
                     try {
-                        logoBtn.click();
+                        simulateClick(logoBtn);
                         stateAdvanced = true;
                     } catch(e) {}
                 }
 
-                // 6. IMMEDIATELY re-check for MikroTik form right after completeAd / state advance!
-                // As soon as completeAd loads credentials, submit without waiting for 10s timer!
-                let mFormPost = document.querySelector("form[name='mikrotik']")
-                    || (isMikrotikForm(document.getElementById("frmLogin")) ? document.getElementById("frmLogin") : null)
-                    || Array.from(document.querySelectorAll("form")).find(isMikrotikForm);
-
-                if (mFormPost) {
-                    let uInPost = mFormPost.querySelector("input[name='username']");
-                    if (uInPost && uInPost.value) {
-                        try {
-                            if (!mFormPost.action || mFormPost.action === window.location.href) {
-                                mFormPost.action = "http://186.186.0.1/login";
-                            }
-                            mFormPost.submit();
-                            result.status = "clicked";
-                            result.buttonClicked = "Bypass MikroTik";
-                            return result;
-                        } catch(e) {}
-                    }
-                }
-
-                // 7. Check if welcome/authenticating animation is currently running:
+                // 6. Handle Welcome / Authenticating Screen (#awing-captive__welcome-loading)
                 let welcome = document.getElementById("awing-captive__welcome-loading");
-                if (welcome && getComputedStyle(welcome).display !== "none") {
-                    // Check if MikroTik form is sitting behind the welcome screen:
+                let isWelcomeVisible = welcome && isVisible(welcome);
+
+                if (isWelcomeVisible || stateAdvanced) {
+                    let frmLogin = document.getElementById("frmLogin");
+                    let frmName = frmLogin ? (frmLogin.getAttribute("name") || "").toLowerCase() : "";
+
+                    // True MikroTik bypass behind welcome screen (Wi-Mesh Rescue / 186.186.0.1)
                     let mBehind = document.querySelector("form[name='mikrotik']")
-                        || (isMikrotikForm(document.getElementById("frmLogin")) ? document.getElementById("frmLogin") : null);
-                    if (mBehind) {
+                        || (isTrueMikrotikForm(frmLogin) ? frmLogin : null);
+
+                    if (mBehind && isTrueMikrotikForm(mBehind)) {
                         let uB = mBehind.querySelector("input[name='username']");
                         if (uB && uB.value) {
                             try {
@@ -332,20 +417,28 @@ class AwingPortal(BasePortal):
                             } catch(e) {}
                         }
                     }
-                    result.status = "waiting_ad_timer";
-                    result.buttonClicked = "Đang kết nối...";
-                    return result;
-                }
 
-                // 8. Direct iframe authentication fallback if Extreme form is in DOM
-                let exForm = document.querySelector("form[name='extreme']");
-                if (exForm && window.awingUIActions && typeof window.awingUIActions.SubmitAuthenticationFormWithIframe === "function") {
-                    try {
-                        window.awingUIActions.SubmitAuthenticationFormWithIframe();
-                        result.status = "clicked";
-                        result.buttonClicked = "Xác thực Extreme Networks";
+                    // For Cisco Meraki (GS25) or Extreme (Circle K):
+                    // AWING naturally submits via SubmitAuthenticationFormWithIframe().
+                    // If not yet triggered, trigger it as fallback:
+                    let isIframeAuthen = frmName === "ciscomeraki" || frmName === "extreme"
+                        || (frmLogin && frmLogin.getAttribute("target") === "loginFrame")
+                        || (window.awingStateMachineContext && window.awingStateMachineContext.getAuthenType && window.awingStateMachineContext.getAuthenType() === 2);
+
+                    if (isIframeAuthen && !document.querySelector("#redirecting-iframe") && window.awingUIActions && typeof window.awingUIActions.SubmitAuthenticationFormWithIframe === "function") {
+                        try {
+                            window.awingUIActions.SubmitAuthenticationFormWithIframe();
+                            result.status = "clicked";
+                            result.buttonClicked = frmName === "ciscomeraki" ? "Xác thực Cisco Meraki" : "Xác thực Extreme Networks";
+                            return result;
+                        } catch(e) {}
+                    }
+
+                    if (isWelcomeVisible) {
+                        result.status = "waiting_ad_timer";
+                        result.buttonClicked = "Đang kết nối...";
                         return result;
-                    } catch(e) {}
+                    }
                 }
 
                 if (stateAdvanced) {
@@ -354,22 +447,26 @@ class AwingPortal(BasePortal):
                     return result;
                 }
 
-                // 9. Generic connect/continue buttons
+                // 7. Generic connect/continue buttons fallback (for any future/unhandled AWING variants)
                 let buttons = Array.from(document.querySelectorAll("button, a, div[role='button'], input[type='button'], input[type='submit']"));
                 let keywords = [
                     "tiếp tục để kết nối", "tiếp tục", "kết nối internet",
-                    "internet access", "kết nối ngay", "truy cập ngay", "chỉ kết nối"
+                    "internet access", "kết nối ngay", "truy cập ngay", "chỉ kết nối",
+                    "kết nối", "connect", "access"
                 ];
                 let target = null;
                 for (let btn of buttons) {
                     let txt = (btn.innerText || btn.textContent || btn.value || "").trim().toLowerCase();
-                    if (keywords.some(kw => txt.includes(kw))) {
+                    if (keywords.some(kw => txt.includes(kw)) && isVisible(btn)) {
                         target = btn;
                         break;
                     }
                 }
                 if (!target) {
-                    target = document.querySelector(".btn-connect, .btn-primary, [class*='connect'], [class*='submit']");
+                    let cand = document.querySelector(".btn-connect, .btn-primary, [class*='connect'], [class*='submit']");
+                    if (cand && isVisible(cand)) {
+                        target = cand;
+                    }
                 }
                 if (target) {
                     let isDisabled = target.disabled || target.getAttribute("aria-disabled") === "true" || target.classList.contains("disabled");
@@ -378,12 +475,14 @@ class AwingPortal(BasePortal):
                         result.buttonClicked = "Đang đếm ngược";
                         return result;
                     }
-                    target.scrollIntoView({ behavior: 'instant', block: 'center' });
-                    target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-                    target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-                    target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-                    target.click();
-                    result.status = "advanced_state";
+                    if (target.dataset && target.dataset.autowificlicked === "true") {
+                        result.status = "waiting_ad_timer";
+                        result.buttonClicked = "Đang kết nối...";
+                        return result;
+                    }
+                    target.dataset.autowificlicked = "true";
+                    simulateClick(target);
+                    result.status = "clicked";
                     result.buttonClicked = "Kết nối Internet";
                     return result;
                 }

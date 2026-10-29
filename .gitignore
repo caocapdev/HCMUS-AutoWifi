@@ -45,6 +45,7 @@ config.json
 portal_dump.html
 *.html
 *_files/
+test_portal/
 
 
 # IDEs & Code Editors
