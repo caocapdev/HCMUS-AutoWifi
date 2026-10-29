@@ -121,6 +121,35 @@ class AwingPortal(BasePortal):
 
         # --- 2. Try Cisco Meraki fast-path (GS25, retail stores) ---
         try:
+            # 2a. Direct login_url parameter in query string or HTML (even when customer modal is active!)
+            parsed_portal = urllib.parse.urlparse(portal_url)
+            qs_portal = urllib.parse.parse_qs(parsed_portal.query, keep_blank_values=True)
+            direct_login_url = qs_portal.get("login_url", [None])[0]
+
+            if not direct_login_url and html:
+                m_login = re.search(r'["\']login_url["\']\s*:\s*["\']([^"\']+)["\']', html)
+                if not m_login:
+                    m_login = re.search(r'login_url=([^&"\']+)', html)
+                if m_login:
+                    direct_login_url = urllib.parse.unquote(m_login.group(1))
+
+            if direct_login_url and ("network-auth.com" in direct_login_url or "splash" in direct_login_url):
+                post_data = {
+                    "success_url": "https://v2.awingconnect.vn/Success",
+                    "username": "awing60",
+                    "password": "Awing60@2018",
+                }
+                headers = {
+                    "Referer": portal_url,
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                }
+                session.post(direct_login_url, data=post_data, headers=headers, timeout=3.5)
+                return {
+                    "success": True,
+                    "message": "Gửi xác thực Cisco Meraki HTTP: awing60"
+                }
+
+            # 2b. Form-based extraction
             if not html:
                 try:
                     resp = session.get(portal_url, timeout=3.0, allow_redirects=True)
@@ -293,7 +322,48 @@ class AwingPortal(BasePortal):
                     return name === "mikrotik" || action.includes("186.186.") || href.includes("186.186.");
                 }
 
-                // 1. Check for promotional voucher / CPA overlay (Circle K style: "Miễn phí 01 Trà Chanh-Yuzu")
+                // 1. Check for Customer Survey / Profile Popup (GS25 second visit, and venues asking for Gender/Birth Year)
+                // Target: #remind-me, .popup-form__remind-me-btn, text: "Nhắc tôi sau", "Remind me", "Để sau"
+                let remindBtn = document.getElementById("remind-me")
+                    || document.querySelector(".popup-form__remind-me-btn")
+                    || Array.from(document.querySelectorAll("#awing-captive__customer-popup button, #awing-captive__customerscreen button, button, a")).find(b => {
+                        let t = (b.innerText || b.textContent || "").trim().toLowerCase();
+                        return (t.includes("nhắc tôi sau") || t.includes("remind me") || t.includes("nhắc lại sau") || t.includes("để sau")) && isVisible(b);
+                    });
+
+                if (remindBtn && isVisible(remindBtn)) {
+                    try {
+                        simulateClick(remindBtn);
+                        if (typeof helper !== "undefined" && typeof helper.remindLater === "function") {
+                            try { helper.remindLater(); } catch(e) {}
+                        }
+                        if (window.awingStateMachineContextActions && typeof window.awingStateMachineContextActions.customerFilterFormRemindLater === "function") {
+                            try { window.awingStateMachineContextActions.customerFilterFormRemindLater(); } catch(e) {}
+                        }
+                        result.status = "advanced_state";
+                        result.buttonClicked = "Bỏ qua khảo sát";
+                        return result;
+                    } catch(e) {}
+                }
+
+                // If customer popup container is open in DOM, dismiss via helper/state machine directly
+                let customerPopup = document.getElementById("awing-captive__customer-popup") || document.getElementById("awing-captive__customerscreen");
+                if (customerPopup && isVisible(customerPopup)) {
+                    let handled = false;
+                    if (typeof helper !== "undefined" && typeof helper.remindLater === "function") {
+                        try { helper.remindLater(); handled = true; } catch(e) {}
+                    }
+                    if (window.awingStateMachineContextActions && typeof window.awingStateMachineContextActions.customerFilterFormRemindLater === "function") {
+                        try { window.awingStateMachineContextActions.customerFilterFormRemindLater(); handled = true; } catch(e) {}
+                    }
+                    if (handled) {
+                        result.status = "advanced_state";
+                        result.buttonClicked = "Bỏ qua khảo sát";
+                        return result;
+                    }
+                }
+
+                // 2. Check for promotional voucher / CPA overlay (Circle K style: "Miễn phí 01 Trà Chanh-Yuzu")
                 // Target: "CHỈ KẾT NỐI WI-FI" / "BỎ QUA" to reveal main connect screen
                 let cpaSecondary = Array.from(document.querySelectorAll("button.option-secondary, .option-button, button, a"))
                     .find(b => {
@@ -309,10 +379,11 @@ class AwingPortal(BasePortal):
                     } catch(e) {}
                 }
 
-                // 2. TRADITIONAL BUTTON CLICKING (PHƯƠNG PHÁP BẤM NÚT THỦ CÔNG)
-                // Primary interactive connect button: #acceptconnection_BannerOverflow, button.connect-button, etc.
-                // Ensures GS25, Circle K, Airports, Cafes, and ALL future AWING networks work naturally!
+                // 3. TRADITIONAL BUTTON CLICKING (PHƯƠNG PHÁP BẤM NÚT THỦ CÔNG)
+                // Primary interactive connect button: #acceptconnection_BannerOverflow, #logo_button, button.connect-button, etc.
+                // Ensures GS25 (first & second visit), Circle K, Airports, Cafes, and ALL future AWING networks work naturally!
                 let acceptBtn = document.getElementById("acceptconnection_BannerOverflow")
+                    || document.getElementById("logo_button")
                     || document.querySelector("button.connect-button")
                     || Array.from(document.querySelectorAll("button, a, div[role='button']")).find(b => {
                         let t = (b.innerText || b.textContent || "").trim().toLowerCase();
