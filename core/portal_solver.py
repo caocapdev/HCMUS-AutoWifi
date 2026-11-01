@@ -299,7 +299,7 @@ class PortalSolver:
                     if status == "clicked":
                         self.log(f"Kích hoạt: {button_name}. Đang đợi kết nối...", "success")
                         is_form_submit = any(k in (button_name or "").lower() for k in [
-                            "frmlogin", "submit", "mikrotik", "extreme", "completead", "authenticat"
+                            "frmlogin", "submit", "mikrotik", "extreme", "completead", "authenticat", "grant", "7-eleven", "giải cứu"
                         ])
                         max_wait_steps = _FORM_SUBMIT_WAIT_STEPS if is_form_submit else _QUICK_SUBMIT_WAIT_STEPS
                         step_delay = _FORM_SUBMIT_STEP_DELAY if is_form_submit else _QUICK_SUBMIT_STEP_DELAY

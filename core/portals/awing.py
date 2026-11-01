@@ -119,12 +119,12 @@ class AwingPortal(BasePortal):
         except Exception:
             pass
 
-        # --- 2. Try Cisco Meraki fast-path (GS25, retail stores) ---
+        # --- 2. Try Cisco Meraki fast-path (GS25, 7-Eleven, retail stores) ---
         try:
-            # 2a. Direct login_url parameter in query string or HTML (even when customer modal is active!)
             parsed_portal = urllib.parse.urlparse(portal_url)
             qs_portal = urllib.parse.parse_qs(parsed_portal.query, keep_blank_values=True)
             direct_login_url = qs_portal.get("login_url", [None])[0]
+            base_grant_url = qs_portal.get("base_grant_url", [None])[0]
 
             if not direct_login_url and html:
                 m_login = re.search(r'["\']login_url["\']\s*:\s*["\']([^"\']+)["\']', html)
@@ -133,6 +133,14 @@ class AwingPortal(BasePortal):
                 if m_login:
                     direct_login_url = urllib.parse.unquote(m_login.group(1))
 
+            if not base_grant_url and html:
+                m_grant = re.search(r'["\']base_grant_url["\']\s*:\s*["\']([^"\']+)["\']', html)
+                if not m_grant:
+                    m_grant = re.search(r'base_grant_url=([^&"\']+)', html)
+                if m_grant:
+                    base_grant_url = urllib.parse.unquote(m_grant.group(1))
+
+            # 2a. Meraki Sign-on URL (GS25 with username/password)
             if direct_login_url and ("network-auth.com" in direct_login_url or "splash" in direct_login_url):
                 post_data = {
                     "success_url": "https://v2.awingconnect.vn/Success",
@@ -149,7 +157,23 @@ class AwingPortal(BasePortal):
                     "message": "Gửi xác thực Cisco Meraki HTTP: awing60"
                 }
 
-            # 2b. Form-based extraction
+            # 2b. Meraki Click-Through Grant URL (7-Eleven without credentials)
+            if base_grant_url and ("network-auth.com" in base_grant_url or "splash" in base_grant_url):
+                grant_params = {
+                    "continue_url": qs_portal.get("user_continue_url", ["http://v1.awingconnect.vn/Success"])[0],
+                    "duration": "7200"
+                }
+                headers = {
+                    "Referer": portal_url,
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                }
+                session.get(base_grant_url, params=grant_params, headers=headers, timeout=3.5)
+                return {
+                    "success": True,
+                    "message": "Gửi xác thực Cisco Meraki Grant HTTP (7-Eleven)"
+                }
+
+            # 2c. Form-based extraction
             if not html:
                 try:
                     resp = session.get(portal_url, timeout=3.0, allow_redirects=True)
@@ -162,7 +186,6 @@ class AwingPortal(BasePortal):
                 soup = BeautifulSoup(html, "html.parser")
                 meraki_form = soup.find("form", {"name": "ciscoMeraki"}) or soup.find("form", id="frmLogin")
                 if not meraki_form and ("network-auth.com" in portal_url or "splash" in portal_url):
-                    # Follow redirect to AWING portal if needed
                     redirect_url = None
                     meta = soup.find("meta", attrs={"http-equiv": re.compile(r"refresh", re.I)})
                     if meta and meta.get("content"):
@@ -182,23 +205,42 @@ class AwingPortal(BasePortal):
                         meraki_form = soup.find("form", {"name": "ciscoMeraki"}) or soup.find("form", id="frmLogin")
 
                 if meraki_form:
-                    m_action = meraki_form.get("action") or ""
+                    m_action = meraki_form.get("action") or base_grant_url or direct_login_url or ""
                     m_name = (meraki_form.get("name") or "").lower()
-                    if m_name == "ciscomeraki" or "network-auth.com" in m_action:
+                    if m_name == "ciscomeraki" or "network-auth.com" in m_action or "splash" in m_action:
                         data = {}
                         for input_tag in meraki_form.find_all("input"):
                             name = input_tag.get("name")
                             if name:
                                 data[name] = input_tag.get("value", "")
+
+                        m_method = (meraki_form.get("method") or "POST").upper()
+                        headers = {
+                            "Referer": portal_url,
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        }
+
+                        # Case A: Sign-on (GS25) with username/password
                         if data.get("username") and m_action.startswith("http"):
-                            headers = {
-                                "Referer": portal_url,
-                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                            }
                             session.post(m_action, data=data, headers=headers, timeout=3.5)
                             return {
                                 "success": True,
                                 "message": f"Gửi xác thực Cisco Meraki HTTP: {data.get('username')}"
+                            }
+
+                        # Case B: Click-through Grant (7-Eleven) without credentials
+                        elif "grant" in m_action or "network-auth.com" in m_action or m_action.startswith("http"):
+                            if not data.get("continue_url"):
+                                data["continue_url"] = "http://v1.awingconnect.vn/Success"
+                            if not data.get("duration"):
+                                data["duration"] = "7200"
+                            if m_method == "GET":
+                                session.get(m_action, params=data, headers=headers, timeout=3.5)
+                            else:
+                                session.post(m_action, data=data, headers=headers, timeout=3.5)
+                            return {
+                                "success": True,
+                                "message": "Gửi xác thực Cisco Meraki Grant HTTP (7-Eleven)"
                             }
         except Exception:
             pass
@@ -489,12 +531,46 @@ class AwingPortal(BasePortal):
                         }
                     }
 
-                    // For Cisco Meraki (GS25) or Extreme (Circle K):
-                    // AWING naturally submits via SubmitAuthenticationFormWithIframe().
-                    // If not yet triggered, trigger it as fallback:
-                    let isIframeAuthen = frmName === "ciscomeraki" || frmName === "extreme"
-                        || (frmLogin && frmLogin.getAttribute("target") === "loginFrame")
-                        || (window.awingStateMachineContext && window.awingStateMachineContext.getAuthenType && window.awingStateMachineContext.getAuthenType() === 2);
+                    // Resolve frmLogin.action if needed
+                    if (frmLogin && (!frmLogin.action || !frmLogin.action.startsWith("http"))) {
+                        try {
+                            let u = new URL(window.location.href);
+                            let bg = u.searchParams.get("base_grant_url") || u.searchParams.get("login_url");
+                            if (bg) frmLogin.action = bg;
+                        } catch(e) {}
+                    }
+
+                    let authenType = (window.awingStateMachineContext && typeof window.awingStateMachineContext.getAuthenType === "function")
+                        ? window.awingStateMachineContext.getAuthenType() : 0;
+                    let counterEl = document.getElementById("awing-captive__welcome-counter");
+                    let counterVal = counterEl ? parseInt(counterEl.innerText || counterEl.textContent || "0") : 0;
+                    let frmAction = frmLogin ? (frmLogin.action || "").toLowerCase() : "";
+
+                    // Case A: 7-Eleven Click-Through Grant OR AUTHEN_TYPE.FORM (authenType === 1)
+                    // Must submit TOP-LEVEL! Never use iframe because Cisco Meraki blocks iframes via X-Frame-Options (ERR_BLOCKED_BY_RESPONSE)!
+                    let isFormGrant = authenType === 1 || frmAction.includes("/splash/grant");
+                    if (isFormGrant && frmLogin && frmLogin.action && frmLogin.action.startsWith("http")) {
+                        if (!frmLogin.dataset || frmLogin.dataset.autowififormsubmitted !== "true") {
+                            if (frmLogin.dataset) frmLogin.dataset.autowififormsubmitted = "true";
+                            frmLogin.removeAttribute("target");
+                            try {
+                                if (window.awingUIActions && typeof window.awingUIActions.SubmitAuthenticationForm === "function") {
+                                    window.awingUIActions.SubmitAuthenticationForm();
+                                } else {
+                                    frmLogin.submit();
+                                }
+                            } catch(e) {
+                                frmLogin.submit();
+                            }
+                            result.status = "clicked";
+                            result.buttonClicked = "Xác thực 7-Eleven (Cisco Meraki Grant)";
+                            return result;
+                        }
+                    }
+
+                    // Case B: GS25 / Circle K (AUTHEN_TYPE.IFRAME === 2 or Extreme Networks)
+                    let isIframeAuthen = (authenType === 2 || frmName === "extreme" || (frmLogin && frmLogin.getAttribute("target") === "loginFrame"))
+                        && !isFormGrant;
 
                     if (isIframeAuthen && !document.querySelector("#redirecting-iframe") && window.awingUIActions && typeof window.awingUIActions.SubmitAuthenticationFormWithIframe === "function") {
                         try {
@@ -503,6 +579,19 @@ class AwingPortal(BasePortal):
                             result.buttonClicked = frmName === "ciscomeraki" ? "Xác thực Cisco Meraki" : "Xác thực Extreme Networks";
                             return result;
                         } catch(e) {}
+                    }
+
+                    // Case C: Rescue stuck at 90-99% on ANY portal
+                    // If counter reached >= 90% and page has not redirected, top-level submit rescues the session immediately!
+                    if (counterVal >= 90 && frmLogin && frmLogin.action && frmLogin.action.startsWith("http")) {
+                        if (!frmLogin.dataset || frmLogin.dataset.autowifirescued !== "true") {
+                            if (frmLogin.dataset) frmLogin.dataset.autowifirescued = "true";
+                            frmLogin.removeAttribute("target");
+                            frmLogin.submit();
+                            result.status = "clicked";
+                            result.buttonClicked = "Giải cứu 99% (Top-level submit)";
+                            return result;
+                        }
                     }
 
                     if (isWelcomeVisible) {

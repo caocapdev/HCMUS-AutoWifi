@@ -13,7 +13,7 @@ DEFAULT_CONFIG = {
     "auto_login_enabled": True,
     "auto_connect_open_portals": True,
     "check_interval": 1,
-    "scan_open_cooldown": 12,
+    "scan_open_cooldown": 5,
     "headless": True,
     "notifications": False,
     "close_to_tray": True,
