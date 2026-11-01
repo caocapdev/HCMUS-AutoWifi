@@ -214,6 +214,7 @@ class MainWindow:
         # General Checkboxes
         self.checkbox_vars = {
             "auto_login_enabled": (tk.BooleanVar(value=config.get("auto_login_enabled", True)), "Tự động đăng nhập khi phát hiện Captive Portal"),
+            "auto_connect_open_portals": (tk.BooleanVar(value=config.get("auto_connect_open_portals", True)), "Tự động kết nối Wi-Fi mở (Captive Portal) khi không có mạng quen thuộc"),
             "headless": (tk.BooleanVar(value=config.get("headless", True)), "Chế độ ẩn trình duyệt (Headless)"),
             "notifications": (tk.BooleanVar(value=config.get("notifications", True)), "Gửi thông báo khi đăng nhập thành công"),
             "close_to_tray": (tk.BooleanVar(value=config.get("close_to_tray", True)), "Thu nhỏ vào khay hệ thống khi đóng")

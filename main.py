@@ -19,7 +19,15 @@ from core.startup_manager import (
     is_task_enabled,
     enable_registry
 )
-from core.network_checker import get_wifi_info, check_captive_portal
+from core.network_checker import (
+    get_wifi_info,
+    check_captive_portal,
+    get_known_wifi_profiles,
+    scan_available_networks,
+    is_open_network,
+    get_available_open_networks,
+    connect_to_wifi
+)
 from core.portal_solver import PortalSolver
 from core.notifier import show_notification
 from ui.main_window import MainWindow
@@ -33,6 +41,10 @@ class AutoWifiApp:
         self.is_running = True
         self.is_logging_in = False
         self.last_attempt_time = 0
+        self.last_scan_attempt_time = 0
+        self._is_connecting_open = False
+        self._failed_open_ssids = {}
+        self._last_connected_ssid = None
         self._stop_event = threading.Event()
 
         callbacks = {
@@ -57,7 +69,7 @@ class AutoWifiApp:
             self.main_window.hide_to_tray()
             self.main_window.log("Đang chạy ngầm trong khay hệ thống.", "info")
 
-        # Load UI hoàn tất trước rồi mới tiến hành kiểm tra / cài đặt Task Scheduler
+        # Defer startup setup until UI has fully rendered
         self.main_window.root.after(600, self._setup_startup_on_first_run)
 
     def _setup_startup_on_first_run(self):
@@ -106,6 +118,8 @@ class AutoWifiApp:
 
     def trigger_check_now(self):
         self.main_window.log("Kiểm tra kết nối mạng...", "info")
+        self._failed_open_ssids.clear()
+        self.last_scan_attempt_time = 0
         threading.Thread(target=self._check_network_once, daemon=True).start()
 
     def trigger_manual_login(self):
@@ -118,25 +132,54 @@ class AutoWifiApp:
 
     def _monitor_loop(self):
         self._stop_event.wait(1.0)
+        last_tick = time.time()
         while self.is_running and not self._stop_event.is_set():
+            now = time.time()
+            elapsed = now - last_tick
+            interval = max(1, config.get("check_interval", 1))
+
+            # System resumed from Sleep / Standby
+            if elapsed > interval + 3.0:
+                self._handle_system_resume(elapsed)
+
             try:
                 self._check_network_once()
             except Exception as e:
                 self.main_window.log(f"Lỗi vòng lặp giám sát: {e}", "error")
 
-            interval = max(1, config.get("check_interval", 1))
+            last_tick = time.time()
             self._stop_event.wait(interval)
+
+    def _handle_system_resume(self, elapsed: float):
+        sleep_sec = int(elapsed)
+        self.main_window.log(f"Phát hiện máy tính vừa thức dậy từ chế độ Sleep ({sleep_sec}s).", "info")
+        self.tray.update_status("working", "Khôi phục kết nối Wi-Fi sau Sleep...")
+
+        self._failed_open_ssids.clear()
+        self._is_connecting_open = False
+        self.last_scan_attempt_time = 0
+        self._last_connected_ssid = None
+
+        # Allow Wi-Fi radio hardware time to reinitialize
+        time.sleep(1.5)
 
     def _check_network_once(self):
         wifi = get_wifi_info()
         captive = check_captive_portal()
         self.main_window.update_network_status(wifi, captive)
-        ssid = wifi.get("ssid", "Wi-Fi")
+        is_connected = wifi.get("connected", False)
+        ssid = wifi.get("ssid", "")
+
+        if is_connected and ssid:
+            self._last_connected_ssid = ssid
+            self._failed_open_ssids.pop(ssid, None)
+        else:
+            self._last_connected_ssid = None
 
         if captive.get("has_internet"):
-            self.tray.update_status("online", f"Đã kết nối: {ssid}")
+            self.tray.update_status("online", f"Đã kết nối: {ssid or 'Wi-Fi'}")
         elif captive.get("is_captive"):
-            self.tray.update_status("captive", f"Yêu cầu đăng nhập: {ssid}")
+            self.tray.update_status("captive", f"Yêu cầu đăng nhập: {ssid or 'Wi-Fi'}")
             now = time.time()
             if config.get("auto_login_enabled", True) and not self.is_logging_in:
                 if now - self.last_attempt_time >= 8:
@@ -145,6 +188,95 @@ class AutoWifiApp:
                     threading.Thread(target=self._perform_login, args=(captive.get("portal_url", ""),), daemon=True).start()
         else:
             self.tray.update_status("offline", "Không có kết nối mạng")
+            now = time.time()
+            scan_cooldown = max(5, config.get("scan_open_cooldown", 12))
+            if (config.get("auto_connect_open_portals", True)
+                    and not self.is_logging_in
+                    and not self._is_connecting_open
+                    and not is_connected
+                    and (now - self.last_scan_attempt_time >= scan_cooldown)):
+                self.last_scan_attempt_time = now
+                threading.Thread(target=self._scan_and_connect_open_portal, daemon=True).start()
+
+    def _scan_and_connect_open_portal(self):
+        if self._is_connecting_open or self.is_logging_in:
+            return
+        self._is_connecting_open = True
+        try:
+            cur_wifi = get_wifi_info()
+            if cur_wifi.get("connected"):
+                return
+
+            # Scan visible networks in range
+            visible = scan_available_networks(trigger_active_scan=True)
+            if not visible or not self.is_running:
+                return
+
+            now = time.time()
+            self._failed_open_ssids = {
+                k: v for k, v in self._failed_open_ssids.items()
+                if now - v < 60
+            }
+
+            known_profiles = get_known_wifi_profiles()
+            known_normalized = {p.strip().lower() for p in known_profiles if p.strip()}
+
+            # If any known secured network is in range, let Windows handle connection natively
+            visible_known_secured = [
+                n for n in visible
+                if n.get("ssid")
+                and (n["ssid"].strip().lower() in known_normalized or n["ssid"] in known_profiles)
+                and not is_open_network(n)
+            ]
+
+            if visible_known_secured:
+                # Let Windows handle connecting to saved profiles natively
+                return
+
+            # Fall back to candidate open networks with captive portals
+            open_nets = get_available_open_networks(visible, known_profiles=known_profiles)
+            if not open_nets or not self.is_running:
+                return
+
+            candidates = [
+                n for n in open_nets
+                if n.get("ssid")
+                and n["ssid"] not in self._failed_open_ssids
+            ]
+
+            if not candidates:
+                return
+
+            target = candidates[0]
+            target_ssid = target["ssid"]
+            target_sig = target.get("signal", 0)
+
+            self.main_window.log(f"Tìm thấy mạng mở: {target_ssid} ({target_sig}%). Đang kết nối thử...", "info")
+            self.tray.update_status("working", f"Kết nối: {target_ssid}...")
+
+            if not connect_to_wifi(target_ssid, timeout=7.0):
+                self.main_window.log(f"Không thể kết nối đến mạng mở {target_ssid}.", "warning")
+                self._failed_open_ssids[target_ssid] = time.time()
+                return
+
+            self.main_window.log(f"Đã kết nối vào {target_ssid}. Đang kiểm tra Captive Portal...", "info")
+            time.sleep(1.8)
+
+            cap = check_captive_portal()
+            if cap.get("is_captive"):
+                self.main_window.log(f"Phát hiện '{target_ssid}' có Captive Portal! Đang tiến hành đăng nhập...", "warning")
+                self._perform_login(portal_url=cap.get("portal_url", ""))
+            elif cap.get("has_internet"):
+                self.main_window.log(f"Đã kết nối thành công vào mạng mở: {target_ssid} (Có sẵn Internet).", "success")
+                self.tray.update_status("online", f"Đã kết nối: {target_ssid}")
+            else:
+                self.main_window.log(f"Mạng mở '{target_ssid}' không có Captive Portal hoặc Internet.", "warning")
+                self._failed_open_ssids[target_ssid] = time.time()
+
+        except Exception as e:
+            self.main_window.log(f"Lỗi quét và kết nối mạng: {e}", "error")
+        finally:
+            self._is_connecting_open = False
 
     def _perform_login(self, portal_url=None):
         if self.is_logging_in:

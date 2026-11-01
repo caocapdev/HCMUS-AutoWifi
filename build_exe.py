@@ -15,17 +15,17 @@ def build():
     target_exe = os.path.join(root_dir, "HCMUS_AutoWifi.exe")
     old_exe = os.path.join(root_dir, "HCMUS_AutoWifi.exe.old")
 
-    # Xóa file .old cũ nếu có
+    # Remove previous backup if present
     if os.path.exists(old_exe):
         try:
             os.remove(old_exe)
         except OSError:
             pass
 
-    # Tắt tiến trình cũ nếu có thể
+    # Terminate running instance if any
     subprocess.run(["taskkill", "/F", "/IM", "HCMUS_AutoWifi.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    # Nếu file exe đang bị khóa bởi Windows Service, đổi tên sang .old để giải phóng tên file
+    # Rename locked exe to release target file name
     if os.path.exists(target_exe):
         try:
             os.rename(target_exe, old_exe)
@@ -47,7 +47,7 @@ def build():
     ]
     subprocess.check_call(cmd, cwd=root_dir)
 
-    # Dọn dẹp thư mục tạm và file spec thừa sau khi build xong
+    # Clean up build artifacts
     for item in ["build", "dist", "HCMUS_AutoWifi.spec", "HCMUS_AutoWifi.exe.old"]:
         p = os.path.join(root_dir, item)
         if os.path.isdir(p):
