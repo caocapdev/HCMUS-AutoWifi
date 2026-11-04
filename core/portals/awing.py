@@ -43,9 +43,9 @@ class AwingPortal(BasePortal):
     def solve_http(self, session: requests.Session, portal_url: str, html: str) -> Optional[Dict[str, Any]]:
         """
         Direct HTTP Fast Path supports three AWING gateway types:
-          A) Extreme Networks (172.x.x.x:880/cgi-bin/hslogin.cgi) - Circle K, Ministop
-          B) Cisco Meraki (network-auth.com/splash/...) - GS25 (Sign-on), 7-Eleven (Grant)
-          C) MikroTik (186.186.0.1/login) - VinBus, Airports, Wi-Mesh Rescue
+          A) Extreme Networks (172.x.x.x:880/cgi-bin/hslogin.cgi)
+          B) Cisco Meraki (network-auth.com/splash/...) - Sign-on & Click-Through Grant
+          C) MikroTik (186.186.0.1/login)
         """
         import time as _time
 
@@ -84,7 +84,7 @@ class AwingPortal(BasePortal):
                 except Exception:
                     pass
 
-        # 1. Extreme Networks (Circle K, Ministop)
+        # 1. Extreme Networks
         try:
             hs_server = qs.get("hs_server", [None])[0]
             qv = qs.get("Qv", [None])[0]
@@ -113,7 +113,7 @@ class AwingPortal(BasePortal):
         except Exception:
             pass
 
-        # 2. Cisco Meraki (GS25 Sign-on & 7-Eleven Click-Through Grant)
+        # 2. Cisco Meraki (Sign-on & Click-Through Grant)
         try:
             direct_login = qs.get("login_url", [None])[0]
             base_grant = qs.get("base_grant_url", [None])[0]
@@ -127,16 +127,16 @@ class AwingPortal(BasePortal):
 
             headers = {"Referer": portal_url, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-            # 2a. Meraki Sign-on URL (GS25)
+            # 2a. Meraki Sign-on URL
             if direct_login and ("network-auth.com" in direct_login or "splash" in direct_login):
                 session.post(direct_login, data={"success_url": "https://v2.awingconnect.vn/Success", "username": "awing60", "password": "Awing60@2018"}, headers=headers, timeout=3.5)
                 return {"success": True, "message": "Gửi xác thực Cisco Meraki HTTP: awing60"}
 
-            # 2b. Meraki Click-Through Grant URL (7-Eleven)
+            # 2b. Meraki Click-Through Grant URL
             if base_grant and ("network-auth.com" in base_grant or "splash" in base_grant):
                 grant_params = {"continue_url": qs.get("user_continue_url", ["http://v1.awingconnect.vn/Success"])[0], "duration": "7200"}
                 session.get(base_grant, params=grant_params, headers=headers, timeout=3.5)
-                return {"success": True, "message": "Gửi xác thực Cisco Meraki Grant HTTP (7-Eleven)"}
+                return {"success": True, "message": "Gửi xác thực Cisco Meraki Grant HTTP"}
 
             # 2c. Form-based extraction
             if soup:
@@ -158,11 +158,11 @@ class AwingPortal(BasePortal):
                                 session.get(m_action, params=data, headers=headers, timeout=3.5)
                             else:
                                 session.post(m_action, data=data, headers=headers, timeout=3.5)
-                            return {"success": True, "message": "Gửi xác thực Cisco Meraki Grant HTTP (7-Eleven)"}
+                            return {"success": True, "message": "Gửi xác thực Cisco Meraki Grant HTTP"}
         except Exception:
             pass
 
-        # 3. MikroTik (Airports, cafes, Wi-Mesh Rescue)
+        # 3. MikroTik
         try:
             if soup:
                 form = soup.find("form", {"name": "mikrotik"}) or (soup.find("form", id="frmLogin") if "186.186." in portal_url else None)
@@ -232,7 +232,7 @@ class AwingPortal(BasePortal):
                     return name === "mikrotik" || action.includes("186.186.") || href.includes("186.186.");
                 }
 
-                // 1. Dismiss Customer Survey / Profile Popup (GS25 / Demographic modals)
+                // 1. Dismiss Customer Survey / Profile Popup (Demographic modals)
                 let remindBtn = document.getElementById("remind-me")
                     || document.querySelector(".popup-form__remind-me-btn")
                     || Array.from(document.querySelectorAll("#awing-captive__customer-popup button, #awing-captive__customerscreen button, button, a")).find(b => {
@@ -271,7 +271,7 @@ class AwingPortal(BasePortal):
                     }
                 }
 
-                // 2. Dismiss Promotional Voucher / CPA overlay (Circle K style)
+                // 2. Dismiss Promotional Voucher / CPA overlay
                 let cpaSecondary = Array.from(document.querySelectorAll("button.option-secondary, .option-button, button, a")).find(b => {
                     let t = (b.innerText || b.textContent || "").toLowerCase();
                     return (t.includes("chỉ kết nối") || t.includes("bỏ qua") || b.classList.contains("option-secondary")) && isVisible(b);
@@ -285,7 +285,7 @@ class AwingPortal(BasePortal):
                     } catch(e) {}
                 }
 
-                // 3. Unified Connect Button Clicking (GS25, 7-Eleven, Circle K, Airports, Cafes)
+                // 3. Unified Connect Button Clicking
                 let connectKeywords = [
                     "kết nối internet", "tiếp tục để kết nối", "internet access",
                     "kết nối ngay", "truy cập ngay", "chỉ kết nối", "kết nối", "connect"
@@ -396,7 +396,7 @@ class AwingPortal(BasePortal):
                     let counterVal = counterEl ? parseInt(counterEl.innerText || counterEl.textContent || "0") : 0;
                     let frmAction = frmLogin ? (frmLogin.action || "").toLowerCase() : "";
 
-                    // Case A: 7-Eleven Click-Through Grant OR AUTHEN_TYPE.FORM (authenType === 1)
+                    // Case A: Click-Through Grant OR AUTHEN_TYPE.FORM (authenType === 1)
                     // Must submit TOP-LEVEL! Never use iframe because Cisco Meraki blocks iframes via X-Frame-Options (ERR_BLOCKED_BY_RESPONSE)!
                     let isFormGrant = authenType === 1 || frmAction.includes("/splash/grant");
                     if (isFormGrant && frmLogin && frmLogin.action && frmLogin.action.startsWith("http")) {
@@ -413,12 +413,12 @@ class AwingPortal(BasePortal):
                                 frmLogin.submit();
                             }
                             result.status = "clicked";
-                            result.buttonClicked = "Xác thực 7-Eleven (Cisco Meraki Grant)";
+                            result.buttonClicked = "Xác thực Cisco Meraki Grant";
                             return result;
                         }
                     }
 
-                    // Case B: GS25 / Circle K (AUTHEN_TYPE.IFRAME === 2 or Extreme Networks)
+                    // Case B: Iframe Authentication (AUTHEN_TYPE.IFRAME === 2 or Extreme Networks)
                     let isIframeAuthen = (authenType === 2 || frmName === "extreme" || (frmLogin && frmLogin.getAttribute("target") === "loginFrame"))
                         && !isFormGrant;
 
