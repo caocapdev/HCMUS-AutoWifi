@@ -69,7 +69,6 @@ class AutoWifiApp:
             self.main_window.hide_to_tray()
             self.main_window.log("Đang chạy ngầm trong khay hệ thống.", "info")
 
-        # Defer startup setup until UI has fully rendered
         self.main_window.root.after(600, self._setup_startup_on_first_run)
 
     def _setup_startup_on_first_run(self):
@@ -138,7 +137,7 @@ class AutoWifiApp:
             elapsed = now - last_tick
             interval = max(1, config.get("check_interval", 1))
 
-            # System resumed from Sleep / Standby
+            # Resume from sleep
             if elapsed > interval + 3.0:
                 self._handle_system_resume(elapsed)
 
@@ -160,7 +159,7 @@ class AutoWifiApp:
         self.last_scan_attempt_time = 0
         self._last_connected_ssid = None
 
-        # Allow Wi-Fi radio hardware time to reinitialize
+        # Reinitialize Wi-Fi radio delay
         time.sleep(1.5)
 
     def _check_network_once(self):
@@ -207,7 +206,6 @@ class AutoWifiApp:
             if cur_wifi.get("connected"):
                 return
 
-            # Scan visible networks in range
             visible = scan_available_networks(trigger_active_scan=True)
             if not visible or not self.is_running:
                 return
@@ -221,7 +219,7 @@ class AutoWifiApp:
             known_profiles = get_known_wifi_profiles()
             known_normalized = {p.strip().lower() for p in known_profiles if p.strip()}
 
-            # If any known secured network is in range, let Windows handle connection natively
+            # Skip if known secured network is in range
             visible_known_secured = [
                 n for n in visible
                 if n.get("ssid")
@@ -230,10 +228,8 @@ class AutoWifiApp:
             ]
 
             if visible_known_secured:
-                # Let Windows handle connecting to saved profiles natively
                 return
 
-            # Fall back to candidate open networks with captive portals
             open_nets = get_available_open_networks(visible, known_profiles=known_profiles)
             if not open_nets or not self.is_running:
                 return

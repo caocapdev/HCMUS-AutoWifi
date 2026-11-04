@@ -6,14 +6,7 @@ from bs4 import BeautifulSoup
 from core.portals.base import BasePortal
 
 class AwingPortal(BasePortal):
-    """
-    Strategy for AWING Connect Wi-Fi portals.
-    Commonly found at:
-      - Circle K, Ministop, GS25, 7-Eleven (v1.awingconnect.vn)
-      - Noi Bai & Tan Son Nhat Airport
-      - Highlands Coffee, Phuc Long, The Coffee House
-      - Vincom, Big C / GO!, KTX Wi-Mesh Rescue
-    """
+    """Strategy for AWING Connect Wi-Fi portals."""
 
     name = "AWING Connect"
 
@@ -21,11 +14,9 @@ class AwingPortal(BasePortal):
         lower_url = url.lower()
         lower_html = html.lower()
 
-        # 1. Direct domain, gateway IP, or portal network matches
         if any(d in lower_url for d in ["awingconnect.vn", "v1.awingconnect.vn", "awing.vn", "awing", "186.186."]):
             return True
 
-        # 2. Key phrases in HTML from AWING template
         indicators = [
             "awingconnect.vn", "v1.awingconnect.vn", "v2.awingconnect.vn", "awing.vn",
             "powered by awing", "ads by awing", "free wi-fi | awing", "wi-fi miễn phí tài trợ bởi",
@@ -37,16 +28,10 @@ class AwingPortal(BasePortal):
         if any(ind in lower_html for ind in indicators):
             return True
 
-        # 3. Hidden input with username starting with 'awing'
         return 'name="username"' in lower_html and 'value="awing' in lower_html
 
     def solve_http(self, session: requests.Session, portal_url: str, html: str) -> Optional[Dict[str, Any]]:
-        """
-        Direct HTTP Fast Path supports three AWING gateway types:
-          A) Extreme Networks (172.x.x.x:880/cgi-bin/hslogin.cgi)
-          B) Cisco Meraki (network-auth.com/splash/...) - Sign-on & Click-Through Grant
-          C) MikroTik (186.186.0.1/login)
-        """
+        """Fast-path HTTP login for Extreme Networks, Cisco Meraki, and MikroTik gateways."""
         import time as _time
 
         parsed_url = urllib.parse.urlparse(portal_url)
@@ -63,7 +48,7 @@ class AwingPortal(BasePortal):
 
         soup = BeautifulSoup(html, "html.parser") if html else None
 
-        # Resolve initial splash page meta/JS redirect if landing without forms
+        # Follow initial splash redirect
         if soup and not soup.find("form") and ("network-auth.com" in portal_url or "splash" in portal_url or "186.186." in portal_url):
             redir = None
             meta = soup.find("meta", attrs={"http-equiv": re.compile(r"refresh", re.I)})
@@ -186,10 +171,7 @@ class AwingPortal(BasePortal):
         return None
 
     def get_browser_script(self) -> str:
-        """
-        Universal browser automation script for AWING portals.
-        Prioritizes traditional button clicking and top-level grant submissions.
-        """
+        """Universal browser automation script for AWING portals."""
         return """
         (function() {
             let result = { status: "searching", buttonClicked: null };
@@ -232,7 +214,7 @@ class AwingPortal(BasePortal):
                     return name === "mikrotik" || action.includes("186.186.") || href.includes("186.186.");
                 }
 
-                // 1. Dismiss Customer Survey / Profile Popup (Demographic modals)
+                // 1. Dismiss survey popup
                 let remindBtn = document.getElementById("remind-me")
                     || document.querySelector(".popup-form__remind-me-btn")
                     || Array.from(document.querySelectorAll("#awing-captive__customer-popup button, #awing-captive__customerscreen button, button, a")).find(b => {
@@ -271,7 +253,7 @@ class AwingPortal(BasePortal):
                     }
                 }
 
-                // 2. Dismiss Promotional Voucher / CPA overlay
+                // 2. Dismiss voucher overlay
                 let cpaSecondary = Array.from(document.querySelectorAll("button.option-secondary, .option-button, button, a")).find(b => {
                     let t = (b.innerText || b.textContent || "").toLowerCase();
                     return (t.includes("chỉ kết nối") || t.includes("bỏ qua") || b.classList.contains("option-secondary")) && isVisible(b);
@@ -285,7 +267,7 @@ class AwingPortal(BasePortal):
                     } catch(e) {}
                 }
 
-                // 3. Unified Connect Button Clicking
+                // 3. Click connect button
                 let connectKeywords = [
                     "kết nối internet", "tiếp tục để kết nối", "internet access",
                     "kết nối ngay", "truy cập ngay", "chỉ kết nối", "kết nối", "connect"
@@ -322,7 +304,7 @@ class AwingPortal(BasePortal):
                     } catch(e) {}
                 }
 
-                // 4. Clickable banner image (#banner)
+                // 4. Click banner image
                 let bannerImg = document.getElementById("banner");
                 if (bannerImg && bannerImg.getAttribute("onclick") && isVisible(bannerImg)) {
                     if (bannerImg.dataset && bannerImg.dataset.autowificlicked === "true") {
@@ -342,7 +324,7 @@ class AwingPortal(BasePortal):
                     } catch(e) {}
                 }
 
-                // 5. Drive AWING State Machine directly if needed (completeAd / nextView)
+                // 5. Advance state machine
                 let stateAdvanced = false;
                 if (window.awingStateMachineContextActions) {
                     let actions = window.awingStateMachineContextActions;
@@ -354,7 +336,7 @@ class AwingPortal(BasePortal):
                     }
                 }
 
-                // 6. Handle Welcome / Authenticating Screen (#awing-captive__welcome-loading)
+                // 6. Authenticating screen
                 let welcome = document.getElementById("awing-captive__welcome-loading");
                 let isWelcomeVisible = welcome && isVisible(welcome);
 
@@ -362,7 +344,7 @@ class AwingPortal(BasePortal):
                     let frmLogin = document.getElementById("frmLogin");
                     let frmName = frmLogin ? (frmLogin.getAttribute("name") || "").toLowerCase() : "";
 
-                    // MikroTik bypass behind welcome screen (186.186.0.1)
+                    // MikroTik bypass
                     let mBehind = document.querySelector("form[name='mikrotik']")
                         || (isTrueMikrotikForm(frmLogin) ? frmLogin : null);
 
@@ -381,7 +363,6 @@ class AwingPortal(BasePortal):
                         }
                     }
 
-                    // Resolve frmLogin.action if needed
                     if (frmLogin && (!frmLogin.action || !frmLogin.action.startsWith("http"))) {
                         try {
                             let u = new URL(window.location.href);
@@ -396,8 +377,7 @@ class AwingPortal(BasePortal):
                     let counterVal = counterEl ? parseInt(counterEl.innerText || counterEl.textContent || "0") : 0;
                     let frmAction = frmLogin ? (frmLogin.action || "").toLowerCase() : "";
 
-                    // Case A: Click-Through Grant OR AUTHEN_TYPE.FORM (authenType === 1)
-                    // Must submit TOP-LEVEL! Never use iframe because Cisco Meraki blocks iframes via X-Frame-Options (ERR_BLOCKED_BY_RESPONSE)!
+                    // Case A: Top-level form grant submit
                     let isFormGrant = authenType === 1 || frmAction.includes("/splash/grant");
                     if (isFormGrant && frmLogin && frmLogin.action && frmLogin.action.startsWith("http")) {
                         if (!frmLogin.dataset || frmLogin.dataset.autowififormsubmitted !== "true") {
@@ -418,7 +398,7 @@ class AwingPortal(BasePortal):
                         }
                     }
 
-                    // Case B: Iframe Authentication (AUTHEN_TYPE.IFRAME === 2 or Extreme Networks)
+                    // Case B: Iframe authentication
                     let isIframeAuthen = (authenType === 2 || frmName === "extreme" || (frmLogin && frmLogin.getAttribute("target") === "loginFrame"))
                         && !isFormGrant;
 
@@ -431,8 +411,7 @@ class AwingPortal(BasePortal):
                         } catch(e) {}
                     }
 
-                    // Case C: Rescue stuck at 90-99% on ANY portal
-                    // If counter reached >= 90% and page has not redirected, top-level submit rescues the session immediately!
+                    // Case C: Rescue stuck at 90-99%
                     if (counterVal >= 90 && frmLogin && frmLogin.action && frmLogin.action.startsWith("http")) {
                         if (!frmLogin.dataset || frmLogin.dataset.autowifirescued !== "true") {
                             if (frmLogin.dataset) frmLogin.dataset.autowifirescued = "true";

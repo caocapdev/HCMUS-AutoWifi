@@ -14,16 +14,14 @@ from core.config import config
 from core.network_checker import get_wifi_info
 from core.portals import find_portal_strategy, BasePortal
 
-# NCSI probe constants
 _NCSI_URL = "http://www.msftconnecttest.com/connecttest.txt"
 _NCSI_EXPECTED = "Microsoft Connect Test"
 
-# Browser automation timing constants
-_MAX_BROWSER_DURATION = 35      # seconds – max time to wait for portal login via browser
-_FORM_SUBMIT_WAIT_STEPS = 6     # extra verify iterations after a form submit click
-_QUICK_SUBMIT_WAIT_STEPS = 1    # verify iterations after a fast button click
-_FORM_SUBMIT_STEP_DELAY = 0.5   # seconds between form-submit verify steps
-_QUICK_SUBMIT_STEP_DELAY = 0.2  # seconds between quick-click verify steps
+_MAX_BROWSER_DURATION = 35
+_FORM_SUBMIT_WAIT_STEPS = 6
+_QUICK_SUBMIT_WAIT_STEPS = 1
+_FORM_SUBMIT_STEP_DELAY = 0.5
+_QUICK_SUBMIT_STEP_DELAY = 0.2
 
 
 def find_system_browser() -> str:
@@ -47,13 +45,7 @@ def find_available_port() -> int:
         return s.getsockname()[1]
 
 class PortalSolver:
-    """
-    Orchestrates captive portal authentication:
-      1. Inspects the portal gateway response.
-      2. Selects the appropriate portal strategy (HCMUS, AWING, Generic).
-      3. Attempts fast API/HTTP authorization.
-      4. Falls back to headless browser automation via Chrome DevTools Protocol.
-    """
+    """Orchestrates captive portal authentication via HTTP or headless browser."""
 
     def __init__(self, log_callback=None):
         self.log = log_callback or (lambda msg, tag="info": print(f"[{tag.upper()}] {msg}"))
@@ -82,7 +74,7 @@ class PortalSolver:
         target_url = portal_url or config.get("portal_redirect_url", "http://www.msftconnecttest.com/redirect")
         self.log(f"Kết nối portal: {target_url}", "info")
 
-        # Step 1: Probe the portal to discover gateway URL and HTML content (1.5s timeout)
+        # Probe portal landing URL and content
         session = requests.Session()
         session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
         landing_url, page_html = target_url, ""
@@ -95,14 +87,11 @@ class PortalSolver:
         portal_strategy = find_portal_strategy(landing_url, page_html)
         self.log(f"Nhận diện: {portal_strategy.name}", "info")
 
-        # Step 2: Fast Path - Direct HTTP / API Logon
-        # For AWING portals run HTTP and browser concurrently (race); for others keep sequential.
         is_awing = "awing" in portal_strategy.name.lower()
-
         if is_awing:
             return self._solve_concurrent(session, landing_url, page_html, portal_strategy)
 
-        # Non-AWING: sequential fast-path then browser
+        # Sequential HTTP fast-path
         try:
             res_http = portal_strategy.solve_http(session, landing_url, page_html)
             if res_http and res_http.get("success"):
@@ -113,7 +102,7 @@ class PortalSolver:
         except Exception as e:
             self.log(f"API chưa hoàn tất ({e}), chuyển sang trình duyệt...", "warning")
 
-        # Step 3: Headless Browser Automation via CDP
+        # Fallback: browser automation via CDP
         browser_exe = find_system_browser()
         if not browser_exe:
             return {"success": False, "message": "Không tìm thấy Edge hoặc Chrome trên hệ thống."}
@@ -122,17 +111,11 @@ class PortalSolver:
         return self._solve_with_browser(browser_exe, target_url, portal_strategy)
 
     def _solve_concurrent(self, session, landing_url: str, page_html: str, strategy: BasePortal) -> dict:
-        """
-        Races direct-HTTP fast path against browser automation in parallel.
-        For AWING portals: the HTTP path tries to extract & submit the hidden
-        MikroTik form directly; the browser path clicks through the UI.
-        Whichever succeeds first wins; the other is abandoned.
-        """
+        """Races direct-HTTP fast path against browser automation in parallel."""
         browser_exe = find_system_browser()
-        done_event = threading.Event()   # set by whichever thread wins
-        result_holder = [None]           # [0] = winning result dict
+        done_event = threading.Event()
+        result_holder = [None]
 
-        # --- HTTP worker ---
         def _http_worker():
             try:
                 self.log("Thử kết nối trực tiếp HTTP...", "info")
@@ -264,14 +247,13 @@ class PortalSolver:
             time.sleep(0.5)
 
             while time.time() - start_time < _MAX_BROWSER_DURATION:
-                # Abort early if the concurrent HTTP path already succeeded
                 if stop_event and stop_event.is_set():
                     return {"success": False, "message": "Kết nối HTTP thành công."}
 
                 if self.verify_internet(timeout=0.4):
                     return self._build_success_result(strategy.name)
 
-                # Dynamically detect redirect to AWING portal
+                # Dynamically switch to AWING if redirected
                 try:
                     cur_url_res = _cdp_call("Runtime.evaluate", {
                         "expression": "window.location.href + ' ' + (document.title || '')",
@@ -286,7 +268,6 @@ class PortalSolver:
                 except Exception:
                     pass
 
-                # Execute strategy DOM script
                 try:
                     res = _cdp_call("Runtime.evaluate", {
                         "expression": js_script,
@@ -309,7 +290,6 @@ class PortalSolver:
                             if self.verify_internet(timeout=0.4):
                                 return self._build_success_result(strategy.name)
                     elif status == "advanced_state":
-                        # State machine advanced (e.g. AWING completeAd) – loop back fast
                         time.sleep(0.15)
                         continue
                     elif status == "waiting_ad_timer":

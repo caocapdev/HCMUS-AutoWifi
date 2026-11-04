@@ -29,9 +29,7 @@ _IGNORED_SSID_PREFIXES = (
 )
 
 def get_wifi_info() -> dict:
-    """
-    Retrieves current Wi-Fi status using Windows netsh command.
-    """
+    """Retrieves current Wi-Fi status using Windows netsh command."""
     info = {
         "connected": False,
         "ssid": "Không có kết nối",
@@ -72,10 +70,7 @@ def get_wifi_info() -> dict:
     return info
 
 def check_captive_portal() -> dict:
-    """
-    Checks if current connection is behind a captive portal.
-    Probes NCSI connecttest.txt and redirects.
-    """
+    """Probes NCSI connecttest.txt to check for a captive portal."""
     result = {
         "has_internet": False,
         "is_captive": False,
@@ -86,7 +81,7 @@ def check_captive_portal() -> dict:
     probe_url = config.get("connecttest_url", "http://www.msftconnecttest.com/connecttest.txt")
     redirect_url = config.get("portal_redirect_url", "http://www.msftconnecttest.com/redirect")
 
-    # Step 1: probe connecttest.txt without following redirects
+    # Probe connecttest.txt without following redirects
     try:
         r = requests.get(probe_url, headers=_PROBE_HEADERS, timeout=1.8, allow_redirects=False)
         result["status_code"] = r.status_code
@@ -114,7 +109,7 @@ def check_captive_portal() -> dict:
     except Exception as e:
         result["details"] = f"Lỗi kết nối probe: {e}"
 
-    # Step 2: Probe redirect_url fallback
+    # Fallback redirect probe
     try:
         r2 = requests.get(redirect_url, headers=_PROBE_HEADERS, timeout=1.8, allow_redirects=False)
         loc2 = r2.headers.get("Location", "")
@@ -133,9 +128,7 @@ def check_captive_portal() -> dict:
     return result
 
 def get_known_wifi_profiles() -> set:
-    """
-    Returns a set of all saved/known Wi-Fi profile names on the Windows system.
-    """
+    """Returns a set of all saved/known Wi-Fi profile names on the Windows system."""
     profiles = set()
     try:
         proc = subprocess.run(
@@ -153,7 +146,6 @@ def get_known_wifi_profiles() -> set:
             k = parts[0].strip().lower()
             if "profile" in k or "hồ sơ" in k:
                 raw_v = parts[1]
-                # netsh adds a single space delimiter after ':'
                 v = raw_v[1:] if raw_v.startswith(" ") else raw_v
                 if v:
                     profiles.add(v)
@@ -196,9 +188,7 @@ def _get_wlan_types():
     return _wlan_types
 
 def trigger_wifi_scan() -> bool:
-    """
-    Triggers an active 802.11 BSS scan via native Windows WlanScan API.
-    """
+    """Triggers an active 802.11 BSS scan via native Windows WlanScan API."""
     try:
         ctypes, wintypes, wlan, WLAN_INTERFACE_INFO_LIST = _get_wlan_types()
         negotiated_version = wintypes.DWORD()
@@ -219,11 +209,7 @@ def trigger_wifi_scan() -> bool:
     return False
 
 def scan_available_networks(trigger_active_scan: bool = False) -> list:
-    """
-    Scans for currently visible Wi-Fi networks in range using netsh wlan show networks.
-    Optionally triggers an active 802.11 scan before querying.
-    Returns a list of dicts: [{'ssid': str, 'auth': str, 'encryption': str, 'signal': int, 'bssids': list}, ...]
-    """
+    """Scans for currently visible Wi-Fi networks in range using netsh."""
     if trigger_active_scan:
         trigger_wifi_scan()
         time.sleep(1.2)
@@ -281,19 +267,13 @@ def scan_available_networks(trigger_active_scan: bool = False) -> list:
     return networks
 
 def is_open_network(net: dict) -> bool:
-    """
-    Checks if a network is unencrypted/open.
-    """
+    """Checks if a network is unencrypted/open."""
     auth = net.get("auth", "").lower()
     enc = net.get("encryption", "").lower()
     return "open" in auth or "none" in enc or auth == "mở" or enc == "không có"
 
 def score_captive_candidate(net: dict, known_profiles: set = None) -> int:
-    """
-    Calculates priority score for candidate captive portal network.
-    Networks with captive portal keywords receive a high priority boost.
-    Open networks previously connected/saved by the user also receive a boost.
-    """
+    """Calculates priority score for candidate captive portal network."""
     ssid = net.get("ssid", "")
     ssid_lower = ssid.lower()
     score = net.get("signal", 0)
@@ -304,10 +284,7 @@ def score_captive_candidate(net: dict, known_profiles: set = None) -> int:
     return score
 
 def get_available_open_networks(networks: list = None, known_profiles: set = None) -> list:
-    """
-    Returns candidate open networks sorted by captive portal likelihood and signal.
-    Filters out empty SSIDs and device-to-device SSIDs.
-    """
+    """Returns candidate open networks sorted by captive portal likelihood and signal."""
     if networks is None:
         networks = scan_available_networks()
 
@@ -329,9 +306,7 @@ def get_available_open_networks(networks: list = None, known_profiles: set = Non
     return open_nets
 
 def create_open_wifi_profile(ssid: str) -> bool:
-    """
-    Creates and registers a temporary open Wi-Fi profile on Windows using netsh wlan add profile.
-    """
+    """Creates and registers a temporary open Wi-Fi profile on Windows."""
     safe_ssid = saxutils.escape(ssid, {'"': '&quot;', "'": '&apos;'})
     hex_ssid = ssid.encode('utf-8').hex().upper()
 
@@ -383,11 +358,7 @@ def create_open_wifi_profile(ssid: str) -> bool:
                 pass
 
 def connect_to_wifi(ssid: str, timeout: float = 7.0) -> bool:
-    """
-    Connects to a Wi-Fi network by SSID (open or pre-configured).
-    If it's an open network without a profile, generates one automatically.
-    Waits up to `timeout` seconds for connection to establish.
-    """
+    """Connects to a Wi-Fi network by SSID."""
     known = get_known_wifi_profiles()
     if ssid not in known and ssid.strip() not in known:
         create_open_wifi_profile(ssid)
