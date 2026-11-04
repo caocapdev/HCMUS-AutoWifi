@@ -162,15 +162,13 @@ def get_known_wifi_profiles() -> set:
         print(f"[Network] Error getting known profiles: {e}")
     return profiles
 
-def trigger_wifi_scan() -> bool:
-    """
-    Triggers an active 802.11 BSS scan via native Windows WlanScan API.
-    """
-    try:
+_wlan_types = None
+
+def _get_wlan_types():
+    global _wlan_types
+    if _wlan_types is None:
         import ctypes
         from ctypes import wintypes
-
-        wlan = ctypes.windll.wlanapi
 
         class GUID(ctypes.Structure):
             _fields_ = [
@@ -194,6 +192,15 @@ def trigger_wifi_scan() -> bool:
                 ('InterfaceInfo', WLAN_INTERFACE_INFO * 1)
             ]
 
+        _wlan_types = (ctypes, wintypes, ctypes.windll.wlanapi, WLAN_INTERFACE_INFO_LIST)
+    return _wlan_types
+
+def trigger_wifi_scan() -> bool:
+    """
+    Triggers an active 802.11 BSS scan via native Windows WlanScan API.
+    """
+    try:
+        ctypes, wintypes, wlan, WLAN_INTERFACE_INFO_LIST = _get_wlan_types()
         negotiated_version = wintypes.DWORD()
         client_handle = wintypes.HANDLE()
 
@@ -204,8 +211,7 @@ def trigger_wifi_scan() -> bool:
                 ret_enum = wlan.WlanEnumInterfaces(client_handle, None, ctypes.byref(pp_list))
                 if ret_enum == 0 and pp_list.contents.dwNumberOfItems > 0:
                     guid = pp_list.contents.InterfaceInfo[0].InterfaceGuid
-                    ret_scan = wlan.WlanScan(client_handle, ctypes.byref(guid), None, None, None)
-                    return ret_scan == 0
+                    return wlan.WlanScan(client_handle, ctypes.byref(guid), None, None, None) == 0
             finally:
                 wlan.WlanCloseHandle(client_handle, None)
     except Exception as e:

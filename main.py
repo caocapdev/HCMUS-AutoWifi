@@ -225,7 +225,7 @@ class AutoWifiApp:
             visible_known_secured = [
                 n for n in visible
                 if n.get("ssid")
-                and (n["ssid"].strip().lower() in known_normalized or n["ssid"] in known_profiles)
+                and n["ssid"].strip().lower() in known_normalized
                 and not is_open_network(n)
             ]
 
