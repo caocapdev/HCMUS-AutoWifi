@@ -193,11 +193,25 @@ class MainWindow:
         self._build_settings_tab(tab_settings)
 
     def _auto_scale_window(self):
-        w, h = 660, 670
+        self.root.update_idletasks()
+
+        req_w = self.root.winfo_reqwidth()
+        req_h = self.root.winfo_reqheight()
+
+        target_w = max(660, req_w + 20)
+        target_h = max(req_h + 12, 680)
+
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        self.root.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 2)}")
-        self.root.minsize(580, 590)
+
+        w = min(target_w, max(sw - 40, 600)) if sw > 600 else target_w
+        h = min(target_h, max(sh - 70, 500)) if sh > 500 else target_h
+
+        x = max(0, (sw - w) // 2)
+        y = max(0, (sh - h) // 2)
+
+        self.root.geometry(f"{w}x{h}+{x}+{y}")
+        self.root.minsize(min(580, w), min(h, req_h))
 
     def _build_settings_tab(self, parent):
         card = tk.Frame(parent, bg=CARD_BG, padx=18, pady=12, highlightbackground=CARD_BORDER, highlightthickness=1)

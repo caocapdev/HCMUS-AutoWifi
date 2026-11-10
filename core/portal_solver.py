@@ -192,6 +192,19 @@ class PortalSolver:
         ignore_ssl = config.get("ignore_ssl_errors", True)
         speed_opt = config.get("browser_speed_optimization", True)
 
+        default_dir = os.path.join(temp_dir, "Default")
+        os.makedirs(default_dir, exist_ok=True)
+        try:
+            with open(os.path.join(default_dir, "Preferences"), "w", encoding="utf-8") as f:
+                json.dump({
+                    "edge_automatic_https": 0,
+                    "https_only_mode_enabled": False,
+                    "profile": {"password_manager_enabled": False},
+                    "safebrowsing": {"enabled": False}
+                }, f)
+        except Exception:
+            pass
+
         args = [
             browser_exe,
             f"--remote-debugging-port={port}",
@@ -199,6 +212,7 @@ class PortalSolver:
             f"--user-data-dir={temp_dir}",
             "--no-first-run",
             "--no-default-browser-check",
+            "--test-type",
             "--disable-extensions",
             "--disable-sync",
             "--disable-background-networking",
@@ -214,7 +228,9 @@ class PortalSolver:
                 "--ignore-ssl-errors",
                 "--ignore-certificate-errors-spki-list",
                 "--allow-insecure-localhost",
-                "--allow-running-insecure-content"
+                "--allow-running-insecure-content",
+                "--disable-web-security",
+                "--https-upgrades-enabled=false"
             ])
 
         if speed_opt:
@@ -222,7 +238,6 @@ class PortalSolver:
                 "--disable-gpu",
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
-                "--disable-setuid-sandbox",
                 "--disable-renderer-backgrounding",
                 "--disable-backgrounding-occluded-windows",
                 "--disable-background-timer-throttling",
@@ -230,7 +245,7 @@ class PortalSolver:
                 "--disable-component-update",
                 "--disable-domain-reliability",
                 "--disable-client-side-phishing-detection",
-                "--disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider,CalculateNativeWinOcclusion,InterestFeedContentSuggestions",
+                "--disable-features=AutomaticHttps,HttpsUpgrades,InsecureDownloadWarnings,MixedContentAutoupgrade,Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider,CalculateNativeWinOcclusion,InterestFeedContentSuggestions",
                 "--mute-audio"
             ])
 
@@ -324,6 +339,40 @@ class PortalSolver:
                         self.log(f"Nhận diện: {strategy.name}", "info")
                 except Exception:
                     pass
+
+                # Dedicated SSL / Insecure connection interstitial bypass
+                if ignore_ssl:
+                    try:
+                        interstitial_res = _cdp_call("Runtime.evaluate", {
+                            "expression": """
+                            (function() {
+                                let btn = document.getElementById("proceed-button")
+                                    || document.getElementById("proceed-link")
+                                    || document.getElementById("details-button")
+                                    || document.getElementById("primary-button")
+                                    || Array.from(document.querySelectorAll("button, a, div[role='button'], input[type='button']")).find(el => {
+                                        let t = (el.innerText || el.textContent || el.value || "").trim().toLowerCase();
+                                        return t.includes("tiếp tục đến trang web") || t.includes("tiếp tục truy cập") || t.includes("continue to site") || (t.includes("proceed") && !t.includes("login"));
+                                    });
+                                if (btn) {
+                                    try { btn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); } catch(e) {}
+                                    try { btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); } catch(e) {}
+                                    try { btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); } catch(e) {}
+                                    btn.click();
+                                    return { clicked: true, text: (btn.innerText || btn.textContent || btn.value || "Bỏ qua cảnh báo").trim() };
+                                }
+                                return null;
+                            })()
+                            """,
+                            "returnByValue": True
+                        }, timeout=1.0)
+                        bypass_val = interstitial_res.get("result", {}).get("result", {}).get("value")
+                        if bypass_val and bypass_val.get("clicked"):
+                            self.log(f"Bỏ qua cảnh báo bảo mật: {bypass_val.get('text')}", "info")
+                            time.sleep(0.4)
+                            continue
+                    except Exception:
+                        pass
 
                 # Execute strategy DOM script
                 try:

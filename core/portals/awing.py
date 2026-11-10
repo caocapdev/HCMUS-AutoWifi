@@ -198,13 +198,23 @@ class AwingPortal(BasePortal):
             let result = { status: "searching", buttonClicked: null };
 
             try {
-                // 0. Bypass Chrome/Edge SSL certificate warning interstitial
-                let sslProceed = document.getElementById("proceed-link") || document.getElementById("details-button");
+                // 0. Bypass Chrome/Edge SSL / Insecure connection warning interstitial
+                let sslProceed = document.getElementById("proceed-button")
+                    || document.getElementById("proceed-link")
+                    || document.getElementById("details-button")
+                    || document.getElementById("primary-button")
+                    || Array.from(document.querySelectorAll("button, a, div[role='button'], input[type='button']")).find(el => {
+                        let t = (el.innerText || el.textContent || el.value || "").trim().toLowerCase();
+                        return t.includes("tiếp tục đến trang web") || t.includes("tiếp tục truy cập") || t.includes("continue to site") || (t.includes("proceed") && !t.includes("login"));
+                    });
                 if (sslProceed) {
                     try {
+                        try { sslProceed.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); } catch(e) {}
+                        try { sslProceed.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); } catch(e) {}
+                        try { sslProceed.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); } catch(e) {}
                         sslProceed.click();
                         result.status = "clicked";
-                        result.buttonClicked = "Bỏ qua cảnh báo SSL";
+                        result.buttonClicked = (sslProceed.innerText || sslProceed.textContent || sslProceed.value || "Bỏ qua cảnh báo bảo mật").trim();
                         return result;
                     } catch(e) {}
                 }
