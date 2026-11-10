@@ -70,7 +70,18 @@ class GenericPortal(BasePortal):
             let result = { status: "searching", buttonClicked: null };
 
             try {
-                // 0. Direct form submission if MikroTik / Captive portal form is present
+                // 0. Bypass Chrome/Edge SSL certificate warning interstitial
+                let sslProceed = document.getElementById("proceed-link") || document.getElementById("details-button");
+                if (sslProceed) {
+                    try {
+                        sslProceed.click();
+                        result.status = "clicked";
+                        result.buttonClicked = "Bỏ qua cảnh báo SSL";
+                        return result;
+                    } catch(e) {}
+                }
+
+                // 1. Direct form submission if MikroTik / Captive portal form is present
                 let frm = document.getElementById("frmLogin") || document.querySelector("form[name='mikrotik']");
                 if (frm) {
                     try {

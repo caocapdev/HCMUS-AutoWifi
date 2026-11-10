@@ -15,6 +15,8 @@ DEFAULT_CONFIG = {
     "check_interval": 1,
     "scan_open_cooldown": 5,
     "headless": True,
+    "ignore_ssl_errors": True,
+    "browser_speed_optimization": True,
     "notifications": False,
     "close_to_tray": True,
     "portal_redirect_url": "http://www.msftconnecttest.com/redirect",

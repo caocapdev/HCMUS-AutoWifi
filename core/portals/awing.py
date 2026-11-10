@@ -168,6 +168,27 @@ class AwingPortal(BasePortal):
         except Exception:
             pass
 
+        # 4. ChilliSpot / CoovaChilli UAM (e.g. :3990/logon or uamip/uamport)
+        try:
+            if soup:
+                form = soup.find("form", id="frmLogin") or soup.find("form", {"name": "frmLogin"})
+                if form:
+                    action = form.get("action") or ""
+                    uamip_in = form.find("input", {"name": "uamip"})
+                    if ":3990" in action or "/logon" in action or uamip_in or "uam" in action.lower():
+                        if not action.startswith("http"):
+                            action = urllib.parse.urljoin(portal_url, action)
+                        data = {inp.get("name"): inp.get("value", "") for inp in form.find_all("input") if inp.get("name")}
+                        if data.get("username") or data.get("response"):
+                            method = (form.get("method") or "get").lower()
+                            if method == "get":
+                                session.get(action, params=data, timeout=3.5)
+                            else:
+                                session.post(action, data=data, timeout=3.5)
+                            return {"success": True, "message": f"Gửi xác thực ChilliSpot/UAM HTTP: {data.get('username', 'awing')}"}
+        except Exception:
+            pass
+
         return None
 
     def get_browser_script(self) -> str:
@@ -177,6 +198,17 @@ class AwingPortal(BasePortal):
             let result = { status: "searching", buttonClicked: null };
 
             try {
+                // 0. Bypass Chrome/Edge SSL certificate warning interstitial
+                let sslProceed = document.getElementById("proceed-link") || document.getElementById("details-button");
+                if (sslProceed) {
+                    try {
+                        sslProceed.click();
+                        result.status = "clicked";
+                        result.buttonClicked = "Bỏ qua cảnh báo SSL";
+                        return result;
+                    } catch(e) {}
+                }
+
                 function isVisible(el) {
                     if (!el) return false;
                     try {
@@ -208,7 +240,7 @@ class AwingPortal(BasePortal):
                     let name = (f.getAttribute("name") || "").toLowerCase();
                     let action = (f.getAttribute("action") || "").toLowerCase();
                     let href = window.location.href.toLowerCase();
-                    if (name === "ciscomeraki" || name === "extreme" || action.includes("hslogin.cgi") || action.includes("network-auth.com")) {
+                    if (name === "ciscomeraki" || name === "extreme" || action.includes("hslogin.cgi") || action.includes("network-auth.com") || action.includes(":3990") || action.includes("/logon")) {
                         return false;
                     }
                     return name === "mikrotik" || action.includes("186.186.") || href.includes("186.186.");
@@ -378,7 +410,7 @@ class AwingPortal(BasePortal):
                     let frmAction = frmLogin ? (frmLogin.action || "").toLowerCase() : "";
 
                     // Case A: Top-level form grant submit
-                    let isFormGrant = authenType === 1 || frmAction.includes("/splash/grant");
+                    let isFormGrant = authenType === 1 || frmAction.includes("/splash/grant") || frmAction.includes(":3990") || frmAction.includes("/logon");
                     if (isFormGrant && frmLogin && frmLogin.action && frmLogin.action.startsWith("http")) {
                         if (!frmLogin.dataset || frmLogin.dataset.autowififormsubmitted !== "true") {
                             if (frmLogin.dataset) frmLogin.dataset.autowififormsubmitted = "true";
@@ -393,7 +425,7 @@ class AwingPortal(BasePortal):
                                 frmLogin.submit();
                             }
                             result.status = "clicked";
-                            result.buttonClicked = "Xác thực Cisco Meraki Grant";
+                            result.buttonClicked = (frmAction.includes(":3990") || frmAction.includes("/logon")) ? "Xác thực biểu mẫu UAM" : "Xác thực Cisco Meraki Grant";
                             return result;
                         }
                     }

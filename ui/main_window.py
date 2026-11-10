@@ -193,11 +193,11 @@ class MainWindow:
         self._build_settings_tab(tab_settings)
 
     def _auto_scale_window(self):
-        w, h = 660, 640
+        w, h = 660, 670
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         self.root.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 2)}")
-        self.root.minsize(580, 560)
+        self.root.minsize(580, 590)
 
     def _build_settings_tab(self, parent):
         card = tk.Frame(parent, bg=CARD_BG, padx=18, pady=12, highlightbackground=CARD_BORDER, highlightthickness=1)
@@ -216,6 +216,8 @@ class MainWindow:
             "auto_login_enabled": (tk.BooleanVar(value=config.get("auto_login_enabled", True)), "Tự động đăng nhập khi phát hiện Captive Portal"),
             "auto_connect_open_portals": (tk.BooleanVar(value=config.get("auto_connect_open_portals", True)), "Tự động kết nối Wi-Fi mở (Captive Portal) khi không có mạng quen thuộc"),
             "headless": (tk.BooleanVar(value=config.get("headless", True)), "Chế độ ẩn trình duyệt (Headless)"),
+            "ignore_ssl_errors": (tk.BooleanVar(value=config.get("ignore_ssl_errors", True)), "Tự động bỏ qua cảnh báo bảo mật (Not Secure / SSL)"),
+            "browser_speed_optimization": (tk.BooleanVar(value=config.get("browser_speed_optimization", True)), "Tối ưu tốc độ trình duyệt (Tắt GPU, chống throttle)"),
             "notifications": (tk.BooleanVar(value=config.get("notifications", True)), "Gửi thông báo khi đăng nhập thành công"),
             "close_to_tray": (tk.BooleanVar(value=config.get("close_to_tray", True)), "Thu nhỏ vào khay hệ thống khi đóng")
         }
