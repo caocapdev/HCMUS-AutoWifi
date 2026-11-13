@@ -4,13 +4,12 @@ Mọi thay đổi đáng chú ý của HCMUS AutoWifi được ghi nhận tại 
 
 ## [1.1.0] - 2026-11-13
 
-### Thêm
-- Hỗ trợ mạng mới: VinBus (ChilliSpot UAM), GS25, 7-Eleven (Cisco Meraki).
-- Tự động quét và kết nối Wi-Fi mở xung quanh khi không có mạng quen thuộc.
-- Tự động vượt cảnh báo SSL / Not Secure ("Tiếp tục đến trang web") trên Edge/Chromium.
+### Tính năng mới
+- Mạng mới: VinBus (ChilliSpot UAM), GS25, 7-Eleven (Cisco Meraki).
+- Tự động quét và kết nối Wi-Fi mở xung quanh khi mất mạng.
+- Tự động vượt cảnh báo SSL / Not Secure trên Edge/Chromium.
 - Cấu hình tắt GPU và chống nghẽn timer nền ở chế độ headless.
-- Tự động co giãn chiều cao cửa sổ vừa khít tab Cài đặt.
-
+- Tự động co giãn chiều cao cửa sổ vừa tab Cài đặt.
 ### Sửa & Tối ưu
 - Sửa lỗi kẹt 99% tại màn hình xác thực Cisco Meraki.
 - Làm gọn log và tinh gọn README.
